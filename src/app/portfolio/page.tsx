@@ -1,10 +1,27 @@
+import PortfolioSummary from "@/components/portfolio/PortfolioSummary";
+import HoldingsTable from "@/components/tables/HoldingsTable";
+import TransactionHistory from "@/components/portfolio/TransactionHistory";
+import Card from "@/components/ui/Card";
+
 export default function PortfolioPage() {
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-text mb-4">Portfolio</h1>
-      <div className="bg-surface rounded-xl p-6 border border-white/5">
-        <p className="text-secondary">Portfolio details will be implemented here.</p>
-      </div>
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold text-text">Portfolio</h1>
+
+      {/* Summary Cards */}
+      <PortfolioSummary />
+
+      {/* Holdings Table */}
+      <Card>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold text-text">Holdings</h3>
+          <button className="text-xs text-primary hover:underline">View All</button>
+        </div>
+        <HoldingsTable />
+      </Card>
+
+      {/* Transaction History */}
+      <TransactionHistory />
     </div>
   );
 }
