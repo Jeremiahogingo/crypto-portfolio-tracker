@@ -21,23 +21,21 @@ The application aggregates live cryptocurrency market data from public APIs and 
 
 # 📸 Screenshots
 
-> **(Add screenshots here)**
-
 ### Dashboard
 
-![Dashboard](screenshots/dashboard.png)
+![Dashboard](public/screenshots/Dashboard.png)
 
 ### Portfolio Overview
 
-![Portfolio](screenshots/portfolio.png)
+![Portfolio](public/screenshots/Portfolio.png)
 
 ### Analytics
 
-![Analytics](screenshots/analytics.png)
+![Analytics](public/screenshots/Analytics.png)
 
 ### Market Page
 
-![Markets](screenshots/markets.png)
+![Markets](public/screenshots/Markets.png)
 
 ### Watchlist
 
