@@ -26,5 +26,9 @@ export default function InvestmentTimelineChart() {
     ],
   };
 
-  return <Bar data={data} />;
+  return (
+    <div className="w-full" style={{ height: 260 }}>
+      <Bar data={data} options={{ maintainAspectRatio: false, responsive: true }} />
+    </div>
+  );
 }

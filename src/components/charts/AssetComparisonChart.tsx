@@ -28,5 +28,12 @@ export default function AssetComparisonChart() {
     ],
   };
 
-  return <Bar data={data} options={{ indexAxis: "y" }} />;
+  return (
+    <div className="w-full" style={{ height: 260 }}>
+      <Bar
+        data={data}
+        options={{ indexAxis: "y", maintainAspectRatio: false, responsive: true }}
+      />
+    </div>
+  );
 }

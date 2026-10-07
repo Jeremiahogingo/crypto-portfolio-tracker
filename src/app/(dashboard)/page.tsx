@@ -44,13 +44,9 @@ export default function DashboardPage() {
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="h-80">
-          <h3 className="text-sm font-semibold text-text mb-4">
-            Portfolio Growth
-          </h3>
-          <div className="h-[calc(100%-2rem)]">
-            <PortfolioChart />
-          </div>
+        <Card>
+          <h3 className="text-sm font-semibold text-text mb-4">Portfolio Growth</h3>
+          <PortfolioChart />
         </Card>
         <Card className="h-80">
           <h3 className="text-sm font-semibold text-text mb-4">

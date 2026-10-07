@@ -40,5 +40,9 @@ export default function PortfolioChart() {
     ],
   };
 
-  return <Line data={data} />;
+  return (
+    <div className="w-full" style={{ height: 260 }}>
+      <Line data={data} options={{ maintainAspectRatio: false, responsive: true }} />
+    </div>
+  );
 }
