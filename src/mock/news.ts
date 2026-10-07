@@ -1,0 +1,120 @@
+export const newsCategories = [
+  "All",
+  "Bitcoin",
+  "Ethereum",
+  "DeFi",
+  "NFT",
+  "Regulation",
+  "Altcoins",
+];
+
+export const newsArticles = [
+  {
+    id: 1,
+    title: "Bitcoin ETF inflows reach new all-time high of $2.4B",
+    description:
+      "Institutional investors poured billions into spot Bitcoin ETFs this week, signaling continued confidence in the world's largest cryptocurrency despite recent volatility.",
+    category: "Bitcoin",
+    image: "🟠",
+    source: "CoinDesk",
+    author: "Sarah Chen",
+    publishedAt: "2 hours ago",
+    featured: true,
+  },
+  {
+    id: 2,
+    title: "Ethereum core devs confirm Dencun upgrade date for mainnet",
+    description:
+      "The long-awaited upgrade will introduce proto-danksharding, dramatically reducing Layer 2 transaction costs.",
+    category: "Ethereum",
+    image: "🔷",
+    source: "The Block",
+    author: "Michael Park",
+    publishedAt: "4 hours ago",
+    featured: false,
+  },
+  {
+    id: 3,
+    title: "Solana DeFi TVL surges past $5 billion milestone",
+    description:
+      "Solana's total value locked has doubled in the last month, driven by memecoin activity and new lending protocols.",
+    category: "DeFi",
+    image: "🟣",
+    source: "Decrypt",
+    author: "Lisa Wang",
+    publishedAt: "6 hours ago",
+    featured: false,
+  },
+  {
+    id: 4,
+    title: "SEC approves new regulatory framework for crypto exchanges",
+    description:
+      "The framework establishes clear compliance guidelines for centralized exchanges operating in the United States.",
+    category: "Regulation",
+    image: "⚖️",
+    source: "Reuters",
+    author: "David Kim",
+    publishedAt: "8 hours ago",
+    featured: false,
+  },
+  {
+    id: 5,
+    title: "NFT market shows signs of revival with $1.2B weekly volume",
+    description:
+      "Blue-chip collections like Bored Apes and Pudgy Penguins see renewed interest from collectors.",
+    category: "NFT",
+    image: "🎨",
+    source: "NFT Plazas",
+    author: "Emma Stone",
+    publishedAt: "10 hours ago",
+    featured: false,
+  },
+  {
+    id: 6,
+    title: "Chainlink launches cross-chain interoperability protocol",
+    description:
+      "CCIP goes live on mainnet, enabling secure transfers between major blockchains for enterprises.",
+    category: "Altcoins",
+    image: "🔗",
+    source: "CoinTelegraph",
+    author: "James Lee",
+    publishedAt: "12 hours ago",
+    featured: false,
+  },
+  {
+    id: 7,
+    title: "Bitcoin mining difficulty hits new record as hashrate climbs",
+    description:
+      "The network's hashrate continues to grow, with miners deploying next-generation ASIC hardware.",
+    category: "Bitcoin",
+    image: "⛏️",
+    source: "Mining Pool Stats",
+    author: "Robert Vance",
+    publishedAt: "14 hours ago",
+    featured: false,
+  },
+  {
+    id: 8,
+    title: "Ethereum staking withdrawals exceed 1M ETH this month",
+    description:
+      "Validators are withdrawing at record rates as staking yields compress following the Shanghai upgrade.",
+    category: "Ethereum",
+    image: "💎",
+    source: "Beaconcha.in",
+    author: "Anna Novikova",
+    publishedAt: "18 hours ago",
+    featured: false,
+  },
+  {
+    id: 9,
+    title: "DeFi protocols hit $100B total value locked for the first time",
+    description:
+      "Lending, DEXs, and yield aggregators lead the resurgence of decentralized finance.",
+    category: "DeFi",
+    image: "🏦",
+    source: "DefiLlama",
+    author: "Chris Turner",
+    publishedAt: "1 day ago",
+    featured: false,
+  },
+];
