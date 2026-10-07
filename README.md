@@ -1,235 +1,278 @@
 # ₿ Crypto Portfolio Tracker
 
-> A modern cryptocurrency portfolio management dashboard that enables investors to track digital assets across multiple exchanges, monitor market trends, analyze portfolio performance, and make informed investment decisions using real-time market data.
+> A secure, full-stack cryptocurrency portfolio management and analytics platform for monitoring digital assets, analyzing investment performance, tracking market movements, and managing portfolio risk from a unified dashboard.
 
 ![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?logo=typescript)
-![TailwindCSS](https://img.shields.io/badge/TailwindCSS-4-38BDF8?logo=tailwindcss)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-38BDF8?logo=tailwindcss)
 ![Chart.js](https://img.shields.io/badge/Chart.js-4-FF6384?logo=chartdotjs)
-![React Query](https://img.shields.io/badge/TanStack_Query-5-FF4154?logo=reactquery)
+![TanStack Query](https://img.shields.io/badge/TanStack_Query-5-FF4154?logo=reactquery)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
 ---
 
 ## 📖 Overview
 
-Crypto Portfolio Tracker is a professional web application designed to help cryptocurrency investors monitor, analyze, and manage their investments from a single dashboard.
+**Crypto Portfolio Tracker** is a modern web application designed to help cryptocurrency investors manage and analyze their digital-asset portfolios from a single platform.
 
-The application aggregates live cryptocurrency market data from public APIs and presents detailed portfolio analytics through beautiful, interactive charts and dashboards. Whether you're a casual investor or an active trader, the platform provides the insights needed to understand portfolio performance and market movements.
+The system combines portfolio management, market data, performance analytics, interactive visualizations, watchlists, price alerts, and market news into one dashboard.
 
----
+The project is designed with a strong focus on:
 
-# 📸 Screenshots
+- Secure user and portfolio management
+- Real-time and historical market data
+- Investment performance analysis
+- Data visualization
+- API integration
+- Responsive user experience
+- Scalable software architecture
 
-### Dashboard
-
-![Dashboard](public/screenshots/Dashboard.png)
-
-### Portfolio Overview
-
-![Portfolio](public/screenshots/Portfolio.png)
-
-### Analytics
-
-![Analytics](public/screenshots/Analytics.png)
-
-### Market Page
-
-![Markets](public/screenshots/Markets.png)
-
-### Watchlist
-
-![Watchlist](screenshots/watchlist.png)
+The platform is intended to function as a **portfolio management and decision-support system**, not as a custodial cryptocurrency wallet or automatic trading platform.
 
 ---
 
-# ✨ Features
+## 🎯 Problem Statement
 
-## 📊 Portfolio Dashboard
+Cryptocurrency investors may hold different assets across multiple wallets and exchanges, making it difficult to obtain a clear view of their overall investment performance.
 
-- Portfolio overview
-- Total portfolio balance
-- Daily gains/losses
-- Portfolio performance
-- Portfolio growth graph
-- Total assets owned
-- Net investment value
+Common challenges include:
+
+- Tracking assets across different platforms
+- Calculating overall profit and loss
+- Monitoring portfolio growth
+- Comparing individual asset performance
+- Understanding asset allocation and concentration
+- Keeping track of market movements
+- Receiving timely price notifications
+
+This application addresses these challenges by providing a centralized portfolio management and analytics environment.
 
 ---
 
-## 💰 Live Cryptocurrency Prices
+## ✨ Core Features
 
-- Live market prices
-- Price updates
+### 📊 Portfolio Dashboard
+
+- Total portfolio value
+- Net invested value
+- Daily profit/loss
+- Overall profit/loss
+- Portfolio ROI
+- Number of assets held
+- Portfolio performance overview
+- Portfolio growth visualization
+
+### 💼 Portfolio Management
+
+- Add cryptocurrency holdings
+- Record investment transactions
+- Edit and delete transactions
+- Track quantity owned
+- Track average purchase price
+- Calculate current value
+- Calculate realized and unrealized performance
+
+### 🌍 Cryptocurrency Markets
+
+- Live cryptocurrency prices
 - Market capitalization
-- 24-hour trading volume
+- 24-hour volume
 - 24-hour price changes
 - Market rankings
+- Top gainers
+- Top losers
+- Trending assets
+- Search and filtering
 
----
-
-## 📈 Portfolio Analytics
+### 📈 Portfolio Analytics
 
 - Daily performance
 - Weekly performance
 - Monthly performance
 - Yearly performance
 - Lifetime returns
-- Profit/Loss calculations
-- ROI calculations
-
----
-
-## 📉 Interactive Charts
-
-- Historical performance
+- ROI analysis
+- Profit/loss trends
 - Portfolio growth
-- Asset allocation
-- Price history
-- Portfolio trends
-- Market comparison
+- Asset performance comparison
+- Asset allocation analysis
 
----
+### 📉 Interactive Visualizations
 
-## 🪙 Asset Management
+- Portfolio performance charts
+- Historical price charts
+- Portfolio growth charts
+- Asset allocation charts
+- Performance comparison charts
+- Market trend visualizations
 
-- Add cryptocurrencies
-- Edit holdings
-- Delete holdings
-- Investment tracking
-- Average purchase price
-- Quantity management
+### ⭐ Watchlist
 
----
+- Add favorite cryptocurrencies
+- Remove assets from watchlists
+- Monitor price movements
+- Monitor percentage changes
+- View quick market statistics
 
-## ⭐ Watchlists
+### 🔔 Price Alerts
 
-- Save favorite cryptocurrencies
-- Track coins
-- Quick market overview
-- Personalized watchlists
-
----
-
-## 🔔 Price Alerts
-
-- Target price alerts
-- Percentage gain alerts
-- Percentage loss alerts
+- Target-price alerts
+- Percentage-change alerts
+- Gain/loss notifications
 - Browser notifications
+- Alert management
 
----
+### 📰 Market News
 
-## 📰 Market News
-
-- Latest crypto news
-- Market analysis
-- Coin updates
+- Cryptocurrency news
+- Market updates
+- Coin-specific news
 - Industry announcements
-- Regulatory news
+- Regulatory developments
+
+### ⚙️ User Settings
+
+- Account management
+- Currency preferences
+- Theme selection
+- Notification preferences
+- Application preferences
 
 ---
 
-## 🌙 User Experience
+## 🔐 Security
 
-- Responsive design
-- Mobile-first interface
-- Dark mode
-- Light mode
-- Smooth animations
-- Modern dashboard
+Security is a core design consideration of the platform.
+
+The system follows a **non-custodial approach**, meaning the application does not store users' cryptocurrency private keys or seed phrases and does not directly hold users' funds.
+
+Planned security measures include:
+
+- Secure authentication
+- Password hashing
+- Session management
+- Role-based authorization
+- Input validation
+- API rate limiting
+- HTTPS/TLS communication
+- Secure environment variables
+- Protection against unauthorized portfolio access
+- Encrypted storage of sensitive credentials where required
+- Audit logging for security-sensitive activities
+- Restricted, read-only exchange API permissions
+
+### Exchange API Security
+
+Where exchange synchronization is supported, the system is designed to use **read-only API credentials** whenever possible.
+
+Trading and withdrawal permissions should remain disabled.
+
+```text
+User
+  │
+  ▼
+Crypto Portfolio Tracker
+  │
+  ▼
+Secure Backend
+  │
+  ▼
+Read-Only Exchange API
+````
+
+Private keys and seed phrases are never required by the application.
 
 ---
 
-# 🏗️ System Architecture
+## 🏗️ System Architecture
 
+```text
+                   External Data Sources
+                ┌──────────┬──────────┬──────────┐
+                │          │          │          │
+                ▼          ▼          ▼          ▼
+           CoinGecko    Binance    News API   Other Sources
+                │          │          │
+                └──────────┴──────┬───┘
+                                  ▼
+                         Data Service Layer
+                                  │
+                                  ▼
+                       TanStack Query Cache
+                                  │
+                                  ▼
+                        Business Logic Layer
+                                  │
+             ┌────────────────────┼────────────────────┐
+             │                    │                    │
+             ▼                    ▼                    ▼
+        Dashboard          Portfolio Manager       Analytics
+             │                    │                    │
+             └────────────────────┼────────────────────┘
+                                  ▼
+                         UI / Visualization
+                                  │
+                                  ▼
+                                User
 ```
-                    Public Crypto APIs
-                            │
-                            ▼
-                  Data Fetching Services
-                            │
-                            ▼
-                TanStack React Query Cache
-                            │
-                            ▼
-                  Business Logic Layer
-                            │
-        ┌───────────────────┼───────────────────┐
-        ▼                   ▼                   ▼
- Dashboard           Portfolio Manager      Watchlists
-        │                   │                   │
-        └───────────────┬───────────────────────┘
-                        ▼
-               Interactive UI Components
-                        │
-                        ▼
-                     End User
-```
+
+The application is structured into separate presentation, business logic, data-access, and service layers to improve maintainability and scalability.
 
 ---
 
-# 🛠️ Tech Stack
+## 🛠️ Technology Stack
 
-## Frontend
+### Frontend
 
-- Next.js
-- React
-- TypeScript
-- Tailwind CSS
+* Next.js 15
+* React
+* TypeScript
+* Tailwind CSS
 
----
+### Data Visualization
 
-## Charts & Visualization
+* Chart.js
+* react-chartjs-2
 
-- Chart.js
-- react-chartjs-2
+### Data Fetching
 
----
+* Axios
+* TanStack React Query
 
-## Data Fetching
+### Authentication
 
-- Axios
-- TanStack React Query
+* NextAuth.js / Auth.js
 
----
+### Forms & Validation
 
-## Authentication
+* React Hook Form
+* Zod
 
-- NextAuth.js
+### UI & Animation
 
----
+* Lucide React
+* Framer Motion
 
-## Forms
+### Theme Management
 
-- React Hook Form
-- Zod
+* next-themes
 
----
+### Utilities
 
-## Styling
+* date-fns
 
-- Tailwind CSS
-- Lucide React Icons
-- Framer Motion
+### Planned Backend & Data Layer
 
----
-
-## Theme
-
-- next-themes
+* PostgreSQL
+* Prisma or equivalent ORM
+* REST APIs
+* WebSockets for selected real-time data streams
 
 ---
 
-## Date Utilities
+## 🗂️ Project Structure
 
-- date-fns
-
----
-
-# 📂 Project Structure
-
-```
+```text
 crypto-portfolio-tracker/
 │
 ├── public/
@@ -238,7 +281,6 @@ crypto-portfolio-tracker/
 │   └── screenshots/
 │
 ├── src/
-│
 │   ├── app/
 │   │   ├── dashboard/
 │   │   ├── portfolio/
@@ -261,297 +303,379 @@ crypto-portfolio-tracker/
 │   │   └── ui/
 │   │
 │   ├── context/
-│   │
 │   ├── hooks/
-│   │
 │   ├── services/
-│   │   ├── coingecko.ts
-│   │   ├── binance.ts
-│   │   ├── news.ts
-│   │   └── alerts.ts
-│   │
 │   ├── lib/
-│   │
 │   ├── types/
-│   │
 │   ├── utils/
-│   │
-│   ├── constants/
-│   │
-│   └── styles/
+│   └── constants/
 │
 ├── .env.local
 ├── package.json
 ├── tsconfig.json
+├── next.config.ts
 └── README.md
 ```
 
 ---
 
-# ⚙️ Installation
+## 🔗 API Integrations
 
-## Clone Repository
+### CoinGecko
 
-```bash
-git clone https://github.com/yourusername/crypto-portfolio-tracker.git
-```
+Used for cryptocurrency market information such as:
 
-```bash
-cd crypto-portfolio-tracker
-```
+* Current prices
+* Market capitalization
+* Historical market data
+* Asset information
+* Market statistics
+
+### Binance
+
+Planned for:
+
+* Exchange market data
+* Market tickers
+* Selected real-time price streams
+* Optional exchange portfolio synchronization
+
+### News Provider
+
+Used for:
+
+* Cryptocurrency news
+* Market updates
+* Industry announcements
+* Regulatory news
+
+> API providers may change as the project evolves. The service layer is designed to make external integrations replaceable without redesigning the user interface.
 
 ---
 
-## Install Dependencies
+## 📸 Screenshots
+
+### Dashboard
+
+![Dashboard](public/screenshots/Dashboard.png)
+
+### Portfolio
+
+![Portfolio](public/screenshots/Portfolio.png)
+
+### Analytics
+
+![Analytics](public/screenshots/Analytics.png)
+
+### Markets
+
+![Markets](public/screenshots/Markets.png)
+
+### Watchlist
+
+![Watchlist](public/screenshots/Watchlist.png)
+
+---
+
+## 📊 Main System Modules
+
+| Module    | Purpose                                             |
+| --------- | --------------------------------------------------- |
+| Dashboard | Portfolio summary and market overview               |
+| Portfolio | Manage holdings and transactions                    |
+| Analytics | Analyze returns, growth, allocation and performance |
+| Markets   | Explore cryptocurrency market data                  |
+| Watchlist | Monitor selected assets                             |
+| Alerts    | Manage price and percentage alerts                  |
+| News      | View cryptocurrency market news                     |
+| Settings  | Manage account and application preferences          |
+
+---
+
+## 🧮 Key Analytics
+
+The system calculates and visualizes important portfolio metrics including:
+
+### Portfolio Value
+
+```text
+Portfolio Value =
+Σ (Asset Quantity × Current Market Price)
+```
+
+### Profit / Loss
+
+```text
+Profit/Loss =
+Current Portfolio Value − Invested Capital
+```
+
+### ROI
+
+```text
+ROI (%) =
+((Current Value − Invested Value) / Invested Value) × 100
+```
+
+Additional analytics can include:
+
+* Asset allocation percentage
+* Historical portfolio growth
+* Individual asset performance
+* Investment timeline
+* Portfolio concentration
+* Risk distribution
+
+---
+
+## 🧪 Testing
+
+The project will include testing at multiple levels:
+
+* Unit testing
+* Component testing
+* API testing
+* Integration testing
+* Authentication and authorization testing
+* Security testing
+* End-to-end testing
+
+Particular attention will be given to testing:
+
+* Portfolio calculations
+* Transaction handling
+* Unauthorized data access
+* API failures
+* Invalid user input
+* Alert conditions
+
+---
+
+## ⚙️ Installation
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/Jeremiahogingo/crypto-portfolio-tracker.git
+cd crypto-portfolio-tracker
+```
+
+### 2. Install Dependencies
 
 ```bash
 npm install
 ```
 
----
+### 3. Configure Environment Variables
 
-## Configure Environment Variables
-
-Create a `.env.local`
+Create a `.env.local` file:
 
 ```env
-NEXT_PUBLIC_COINGECKO_API=
-NEXT_PUBLIC_BINANCE_API=
-NEXT_PUBLIC_NEWS_API=
+# Authentication
 NEXTAUTH_SECRET=
 NEXTAUTH_URL=http://localhost:3000
+
+# Server-side API credentials
+COINGECKO_API_KEY=
+BINANCE_API_KEY=
+BINANCE_API_SECRET=
+NEWS_API_KEY=
+
+# Database
+DATABASE_URL=
 ```
 
----
+> **Important:** Secret API credentials must remain server-side and must never be exposed using `NEXT_PUBLIC_*` environment variables.
 
-## Run Development Server
+### 4. Start the Development Server
 
 ```bash
 npm run dev
 ```
 
-Open
+Open:
 
-```
+```text
 http://localhost:3000
 ```
 
 ---
 
-# 📊 Dashboard Modules
+## 🚀 Production Build
 
-## 🏠 Dashboard
-
-Displays
-
-- Portfolio Summary
-- Net Worth
-- Today's Profit/Loss
-- Portfolio Performance
-- Trending Coins
-
----
-
-## 💼 Portfolio
-
-Manage
-
-- Holdings
-- Investment Amount
-- Buy Price
-- Quantity
-- ROI
-
----
-
-## 📈 Analytics
-
-Visualize
-
-- Asset Allocation
-- Portfolio Growth
-- Profit Trends
-- Historical Performance
-
----
-
-## 🌍 Markets
-
-Browse
-
-- Top Gainers
-- Top Losers
-- Trending Coins
-- Market Rankings
-
----
-
-## ⭐ Watchlist
-
-Monitor
-
-- Favorite Coins
-- Custom Lists
-- Live Prices
-
----
-
-## 🔔 Alerts
-
-Receive
-
-- Price Notifications
-- Percentage Change Alerts
-- Portfolio Notifications
-
----
-
-## ⚙️ Settings
-
-Customize
-
-- Currency
-- Theme
-- Notifications
-- Account
-
----
-
-# 🔗 API Integrations
-
-## CoinGecko
-
-- Live Prices
-- Historical Data
-- Coin Information
-- Market Statistics
-
----
-
-## Binance
-
-- Exchange Prices
-- Market Tickers
-- Trading Data
-
----
-
-## CryptoCompare
-
-- Historical Charts
-- Price History
-
----
-
-## NewsAPI
-
-- Cryptocurrency News
-- Market Updates
-
----
-
-# 📈 Planned Improvements
-
-- Portfolio synchronization across exchanges
-- Exchange API integration
-- NFT portfolio tracking
-- Staking rewards tracking
-- DeFi investment tracking
-- AI portfolio recommendations
-- Tax reporting
-- Export reports to PDF
-- CSV import/export
-- Multi-language support
-- Offline mode
-- Progressive Web App
-- Mobile application
-
----
-
-# 🧪 Future Integrations
-
-- Coinbase API
-- Kraken API
-- Bybit API
-- OKX API
-- KuCoin API
-- CoinMarketCap API
-
----
-
-# 🚀 Deployment
-
-Build production version
+Create a production build:
 
 ```bash
 npm run build
 ```
 
-Start production server
+Start the production server:
 
 ```bash
 npm start
 ```
 
-Deploy easily using
+The application can be deployed using platforms such as:
 
-- Vercel
-- Netlify
-- Railway
-- Render
+* Vercel
+* Railway
+* Render
+* Netlify
 
 ---
 
-# 🤝 Contributing
+## 🗺️ Development Roadmap
+
+### Phase 1 — UI Foundation
+
+* [x] Project initialization
+* [x] Dashboard architecture
+* [ ] Responsive navigation
+* [ ] Reusable UI components
+* [ ] Dashboard interface
+* [ ] Portfolio interface
+* [ ] Markets interface
+* [ ] Analytics interface
+
+### Phase 2 — Core Application
+
+* [ ] Authentication
+* [ ] Database integration
+* [ ] Portfolio management
+* [ ] Transaction management
+* [ ] Portfolio calculations
+* [ ] Watchlists
+* [ ] Alerts
+
+### Phase 3 — Market Data
+
+* [ ] CoinGecko integration
+* [ ] Historical market data
+* [ ] Real-time market updates
+* [ ] Market search and filtering
+* [ ] News integration
+
+### Phase 4 — Security & Reliability
+
+* [ ] Authorization and access control
+* [ ] API credential protection
+* [ ] Rate limiting
+* [ ] Audit logging
+* [ ] Security testing
+* [ ] Error monitoring
+
+### Phase 5 — Advanced Features
+
+* [ ] Exchange synchronization
+* [ ] CSV import/export
+* [ ] PDF portfolio reports
+* [ ] Tax reporting
+* [ ] Staking tracking
+* [ ] DeFi tracking
+* [ ] NFT portfolio tracking
+* [ ] AI-assisted portfolio insights
+* [ ] Progressive Web App support
+
+---
+
+## 🔮 Future Integrations
+
+The platform may support additional exchanges and data providers, including:
+
+* Coinbase
+* Kraken
+* Bybit
+* OKX
+* KuCoin
+* CoinMarketCap
+
+These integrations are planned extensions and are not required for the core portfolio tracking functionality.
+
+---
+
+## 📌 Project Scope
+
+The core system focuses on **portfolio management, market monitoring, analytics, and decision support**.
+
+The application does **not** aim to:
+
+* Act as a cryptocurrency wallet
+* Store private keys or seed phrases
+* Hold users' cryptocurrency
+* Automatically execute trades
+
+This design reduces the security risks associated with custodial financial applications while still providing useful investment analytics.
+
+---
+
+## 🎓 Academic & Technical Value
+
+This project demonstrates the practical application of software engineering concepts including:
+
+* Requirements analysis
+* System architecture and design
+* Database design
+* API integration
+* Authentication and authorization
+* Secure software development
+* Real-time data processing
+* Data analytics
+* Data visualization
+* Responsive UI design
+* Testing and quality assurance
+* Deployment and maintenance
+
+The project therefore combines **full-stack software engineering, financial analytics, API integration, and cybersecurity principles** within one system.
+
+---
+
+## 🤝 Contributing
 
 Contributions are welcome.
 
-1. Fork the repository
-
-2. Create a feature branch
+1. Fork the repository.
+2. Create a feature branch:
 
 ```bash
-git checkout -b feature/NewFeature
+git checkout -b feature/new-feature
 ```
 
-3. Commit changes
+3. Commit your changes:
 
 ```bash
 git commit -m "Add new feature"
 ```
 
-4. Push changes
+4. Push the branch:
 
 ```bash
-git push origin feature/NewFeature
+git push origin feature/new-feature
 ```
 
-5. Open a Pull Request
+5. Open a Pull Request.
 
 ---
 
-# 📄 License
+## 📄 License
 
-This project is licensed under the MIT License.
+This project is licensed under the **MIT License**.
+
+See the `LICENSE` file for details.
 
 ---
 
-# 👨‍💻 Author
+## 👨‍💻 Author
 
-**Jeremiah Ogingo**
+### Jeremiah Ogingo
 
-Software Engineer
+**Software Engineer | Full-Stack Developer | Cybersecurity Enthusiast**
 
-GitHub: https://github.com/Jeremiahogingo
-
-LinkedIn: https://linkedin.com/in/jeremiah-omondi-30540432a
-
-Portfolio: https://my-portfolio-eta-six-33.vercel.app
+* GitHub: [Jeremiahogingo](https://github.com/Jeremiahogingo)
+* LinkedIn: [Jeremiah Ogingo](https://linkedin.com/in/jeremiah-omondi-30540432a)
+* Portfolio: [my-portfolio-eta-six-33.vercel.app](https://my-portfolio-eta-six-33.vercel.app)
 
 ---
 
 ## ⭐ Support
 
-If you found this project useful, consider giving it a **⭐ Star** on GitHub. It helps others discover the project and motivates continued development.
-
----
+If you find this project useful, consider giving the repository a ⭐ on GitHub.
