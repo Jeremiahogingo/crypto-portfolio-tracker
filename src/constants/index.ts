@@ -1,8 +1,3 @@
-export const NAV_TICKERS = [
-  { symbol: "BTC", change: "+1.6%", positive: true },
-  { symbol: "ETH", change: "-0.4%", positive: false },
-];
-
 export const SIDEBAR_ITEMS = [
   { icon: "🏠", label: "Dashboard", href: "/" },
   { icon: "💼", label: "Portfolio", href: "/portfolio" },

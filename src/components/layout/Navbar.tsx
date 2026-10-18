@@ -1,13 +1,41 @@
+// src/components/layout/Navbar.tsx
+//
+// Top navigation bar. Renders on every dashboard page via DashboardShell.
+//
+// ─── Ticker ─────────────────────────────────────────────────────────────
+// BTC and ETH prices shown in the top-right are fetched live. Because
+// Navbar lives in the persistent dashboard shell, the fetch runs once per
+// page load (subsequent client-side navigations reuse the cache — React
+// Query's staleTime is 60s and DashboardShell doesn't remount between
+// page transitions). One fetch per 60s per tab is comfortably within
+// CoinGecko's rate limits.
+//
+// ─── Search input ───────────────────────────────────────────────────────
+// Still a static input in this step. Wiring it to /markets?q=... is
+// tracked for Phase 3.5c alongside the Watchlist page's search work.
+// Leaving it presentational avoids a half-built search experience.
+
 "use client";
 
 import ThemeToggle from "@/components/ui/ThemeToggle";
-import { NAV_TICKERS } from "@/constants";
+import Skeleton from "@/components/ui/Skeleton";
+import { useMarkets } from "@/hooks/useMarkets";
+import { formatPercent } from "@/utils/format";
 
 interface NavbarProps {
   onMenuToggle: () => void;
 }
 
+// Constrained to just the two coins we display. CoinGecko returns them
+// in market-cap order (BTC then ETH) — which happens to match design.
+const TICKER_IDS = ["bitcoin", "ethereum"];
+
 export default function Navbar({ onMenuToggle }: NavbarProps) {
+  const { coins, isLoading } = useMarkets({
+    ids: TICKER_IDS,
+    per_page: TICKER_IDS.length,
+  });
+
   return (
     <header className="sticky top-0 z-30 bg-surface/80 backdrop-blur-md border-b border-white/5">
       <div className="flex items-center justify-between px-4 lg:px-6 h-16">
@@ -31,23 +59,33 @@ export default function Navbar({ onMenuToggle }: NavbarProps) {
                 🔍
               </span>
             </div>
-            {NAV_TICKERS.map((ticker) => (
-              <div
-                key={ticker.symbol}
-                className="hidden md:flex items-center gap-1 bg-surface px-3 py-1 rounded-full border border-white/5"
-              >
-                <span className="text-sm font-medium text-text">
-                  {ticker.symbol}
-                </span>
-                <span
-                  className={`text-xs font-medium ${
-                    ticker.positive ? "text-success" : "text-danger"
-                  }`}
-                >
-                  {ticker.change}
-                </span>
-              </div>
-            ))}
+
+            {/* Live ticker */}
+            <div className="hidden md:flex items-center gap-2">
+              {isLoading &&
+                [0, 1].map((i) => (
+                  <Skeleton key={i} className="h-7 w-20 rounded-full" />
+                ))}
+
+              {!isLoading &&
+                coins.map((coin) => (
+                  <div
+                    key={coin.id}
+                    className="flex items-center gap-1 bg-surface px-3 py-1 rounded-full border border-white/5"
+                  >
+                    <span className="text-sm font-medium text-text">
+                      {coin.symbol}
+                    </span>
+                    <span
+                      className={`text-xs font-medium ${
+                        coin.change24h >= 0 ? "text-success" : "text-danger"
+                      }`}
+                    >
+                      {formatPercent(coin.change24h)}
+                    </span>
+                  </div>
+                ))}
+            </div>
           </div>
         </div>
 
