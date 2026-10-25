@@ -135,7 +135,10 @@ function extractImage(item: Record<string, unknown>): string | undefined {
 
   const image = item.image as Record<string, unknown> | string | undefined;
   if (typeof image === "string") return image;
-  if (typeof image?.["@_href"] === "string") return image["@_href"];
+  if (typeof image === "object" && image !== null) {
+    const href = image["@_href"];
+    if (typeof href === "string") return href;
+  }
 
   return undefined;
 }
@@ -164,18 +167,37 @@ function extractCategory(
 
 /**
  * Extract the article URL. RSS uses <link>text</link>; Atom uses
- * <link href="…" rel="alternate" />. Both appear in the wild.
+ * <link href="…" rel="alternate" />. Both appear in the wild, and some
+ * feeds provide multiple <link> elements (self + alternate + related).
+ *
+ * TypeScript note: `item.link` is `unknown` because the parsed XML tree is
+ * untyped. We narrow through `typeof link === "string"` for the RSS case,
+ * then through `typeof link === "object"` for the Atom case, so every
+ * indexed access is on a known object — no `any` casts required.
  */
 function extractUrl(item: Record<string, unknown>): string | undefined {
   const link = item.link;
+
+  // RSS 2.0: <link>https://…</link>
   if (typeof link === "string") return link;
+
+  // Atom: array of <link> elements — <link href="…" rel="alternate" />
   if (Array.isArray(link)) {
-    for (const l of link) {
-      if (typeof l === "string") return l;
-      if (l?.["@_href"]) return l["@_href"];
+    for (const entry of link) {
+      if (typeof entry === "string") return entry;
+      if (typeof entry === "object" && entry !== null) {
+        const href = (entry as Record<string, unknown>)["@_href"];
+        if (typeof href === "string") return href;
+      }
     }
   }
-  if (link?.["@_href"]) return link["@_href"];
+
+  // Atom: single <link href="…" />
+  if (typeof link === "object" && link !== null) {
+    const href = (link as Record<string, unknown>)["@_href"];
+    if (typeof href === "string") return href;
+  }
+
   return undefined;
 }
 
@@ -282,7 +304,8 @@ export async function getNews(
         headers: {
           // Some feeds block requests without a conventional UA.
           "user-agent": "CryptoTracker/1.0 (+https://example.com)",
-          accept: "application/rss+xml, application/atom+xml, application/xml, text/xml",
+          accept:
+            "application/rss+xml, application/atom+xml, application/xml, text/xml",
         },
         next: { revalidate: 300 },
       });
@@ -307,7 +330,10 @@ export async function getNews(
   }
 
   const merged = results
-    .filter((r): r is PromiseFulfilledResult<NewsArticle[]> => r.status === "fulfilled")
+    .filter(
+      (r): r is PromiseFulfilledResult<NewsArticle[]> =>
+        r.status === "fulfilled"
+    )
     .flatMap((r) => r.value);
 
   const deduped = new Map<string, NewsArticle>();

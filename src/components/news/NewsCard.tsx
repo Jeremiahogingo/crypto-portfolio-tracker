@@ -28,7 +28,6 @@ export default function NewsCard({ article }: NewsCardProps) {
       className="block h-full"
     >
       <Card hover className="flex flex-col h-full">
-        {/* Banner */}
         <div className="w-full h-32 rounded-lg overflow-hidden mb-4 bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center">
           {article.imageUrl ? (
             // eslint-disable-next-line @next/next/no-img-element

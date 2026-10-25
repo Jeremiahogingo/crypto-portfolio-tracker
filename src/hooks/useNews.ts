@@ -12,10 +12,9 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { getJson } from "@/lib/api/client";
+import { queryKeys } from "@/lib/query/keys";
 import type { ApiResponse } from "@/types/market";
 import type { NewsArticle } from "@/types/news";
-import { queryKeys } from "@/lib/query/keys";
-
 
 interface UseNewsOptions {
   limit?: number;
@@ -25,7 +24,7 @@ export function useNews(options: UseNewsOptions = {}) {
   const limit = options.limit ?? 30;
 
   const query = useQuery<ApiResponse<NewsArticle[]>>({
-    queryKey: ["news", { limit }],
+    queryKey: queryKeys.news(limit),
     queryFn: ({ signal }) =>
       getJson<NewsArticle[]>(`/api/crypto/news?limit=${limit}`, signal),
     staleTime: 5 * 60 * 1000,

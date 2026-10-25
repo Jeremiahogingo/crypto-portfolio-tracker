@@ -39,7 +39,7 @@ export default function NewsPage() {
   const [rawSearch, setRawSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
-  // 200ms debounce: fast enough to feel instant, slow enough to avoid
+  // 200 ms debounce: fast enough to feel instant, slow enough to avoid
   // filtering the full list on every keystroke.
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(rawSearch), 200);
