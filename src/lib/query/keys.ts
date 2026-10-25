@@ -35,4 +35,8 @@ export const queryKeys = {
 
   /** Trending coins. No params. */
   trending: () => ["trending"] as const,
+
+    /** Aggregated news feed. Limit is part of the key because the dashboard
+   *  and News page request different sizes. */
+  news: (limit: number) => ["news", { limit }] as const,
 };

@@ -14,6 +14,8 @@ import { useQuery } from "@tanstack/react-query";
 import { getJson } from "@/lib/api/client";
 import type { ApiResponse } from "@/types/market";
 import type { NewsArticle } from "@/types/news";
+import { queryKeys } from "@/lib/query/keys";
+
 
 interface UseNewsOptions {
   limit?: number;
