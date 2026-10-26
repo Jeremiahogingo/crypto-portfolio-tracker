@@ -1,19 +1,9 @@
 // src/components/layout/Navbar.tsx
 //
-// Top navigation bar. Renders on every dashboard page via DashboardShell.
+// Top navigation bar. Accepts the user prop from DashboardShell so the
+// avatar reflects the authenticated account.
 //
-// ─── Ticker ─────────────────────────────────────────────────────────────
-// BTC and ETH prices shown in the top-right are fetched live. Because
-// Navbar lives in the persistent dashboard shell, the fetch runs once per
-// page load (subsequent client-side navigations reuse the cache — React
-// Query's staleTime is 60s and DashboardShell doesn't remount between
-// page transitions). One fetch per 60s per tab is comfortably within
-// CoinGecko's rate limits.
-//
-// ─── Search input ───────────────────────────────────────────────────────
-// Still a static input in this step. Wiring it to /markets?q=... is
-// tracked for Phase 3.5c alongside the Watchlist page's search work.
-// Leaving it presentational avoids a half-built search experience.
+// Ticker logic unchanged from Phase 3.
 
 "use client";
 
@@ -21,16 +11,16 @@ import ThemeToggle from "@/components/ui/ThemeToggle";
 import Skeleton from "@/components/ui/Skeleton";
 import { useMarkets } from "@/hooks/useMarkets";
 import { formatPercent } from "@/utils/format";
+import type { ShellUser } from "./DashboardShell";
 
 interface NavbarProps {
+  user: ShellUser;
   onMenuToggle: () => void;
 }
 
-// Constrained to just the two coins we display. CoinGecko returns them
-// in market-cap order (BTC then ETH) — which happens to match design.
 const TICKER_IDS = ["bitcoin", "ethereum"];
 
-export default function Navbar({ onMenuToggle }: NavbarProps) {
+export default function Navbar({ user, onMenuToggle }: NavbarProps) {
   const { coins, isLoading } = useMarkets({
     ids: TICKER_IDS,
     per_page: TICKER_IDS.length,
@@ -39,7 +29,6 @@ export default function Navbar({ onMenuToggle }: NavbarProps) {
   return (
     <header className="sticky top-0 z-30 bg-surface/80 backdrop-blur-md border-b border-white/5">
       <div className="flex items-center justify-between px-4 lg:px-6 h-16">
-        {/* Left section */}
         <div className="flex items-center gap-4">
           <button
             onClick={onMenuToggle}
@@ -60,7 +49,6 @@ export default function Navbar({ onMenuToggle }: NavbarProps) {
               </span>
             </div>
 
-            {/* Live ticker */}
             <div className="hidden md:flex items-center gap-2">
               {isLoading &&
                 [0, 1].map((i) => (
@@ -89,7 +77,6 @@ export default function Navbar({ onMenuToggle }: NavbarProps) {
           </div>
         </div>
 
-        {/* Right section */}
         <div className="flex items-center gap-2">
           <ThemeToggle />
           <button className="p-2 text-secondary hover:text-text relative">
@@ -97,7 +84,7 @@ export default function Navbar({ onMenuToggle }: NavbarProps) {
             <span className="absolute top-1 right-1 w-2 h-2 bg-danger rounded-full" />
           </button>
           <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-sm font-medium">
-            JO
+            {user.initials}
           </div>
         </div>
       </div>
