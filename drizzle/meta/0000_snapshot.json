@@ -1,0 +1,832 @@
+{
+  "id": "f220556a-473c-4356-b475-f2c10f5c38b5",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.alerts": {
+      "name": "alerts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "coin_id": {
+          "name": "coin_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "symbol": {
+          "name": "symbol",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "condition": {
+          "name": "condition",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target_price": {
+          "name": "target_price",
+          "type": "numeric(20, 8)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "enabled": {
+          "name": "enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "alerts_user_id_idx": {
+          "name": "alerts_user_id_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "alerts_enabled_idx": {
+          "name": "alerts_enabled_idx",
+          "columns": [
+            {
+              "expression": "enabled",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "alerts_user_id_users_id_fk": {
+          "name": "alerts_user_id_users_id_fk",
+          "tableFrom": "alerts",
+          "tableTo": "users",
+          "schemaTo": "auth",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "alerts_select_own": {
+          "name": "alerts_select_own",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "public"
+          ],
+          "using": "auth.uid() = user_id"
+        },
+        "alerts_insert_own": {
+          "name": "alerts_insert_own",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "public"
+          ],
+          "withCheck": "auth.uid() = user_id"
+        },
+        "alerts_update_own": {
+          "name": "alerts_update_own",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": [
+            "public"
+          ],
+          "using": "auth.uid() = user_id",
+          "withCheck": "auth.uid() = user_id"
+        },
+        "alerts_delete_own": {
+          "name": "alerts_delete_own",
+          "as": "PERMISSIVE",
+          "for": "DELETE",
+          "to": [
+            "public"
+          ],
+          "using": "auth.uid() = user_id"
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.holdings": {
+      "name": "holdings",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "portfolio_id": {
+          "name": "portfolio_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "coin_id": {
+          "name": "coin_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "symbol": {
+          "name": "symbol",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quantity": {
+          "name": "quantity",
+          "type": "numeric(28, 8)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cost_basis": {
+          "name": "cost_basis",
+          "type": "numeric(20, 8)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "holdings_portfolio_id_idx": {
+          "name": "holdings_portfolio_id_idx",
+          "columns": [
+            {
+              "expression": "portfolio_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "holdings_user_id_idx": {
+          "name": "holdings_user_id_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "holdings_portfolio_id_portfolios_id_fk": {
+          "name": "holdings_portfolio_id_portfolios_id_fk",
+          "tableFrom": "holdings",
+          "tableTo": "portfolios",
+          "columnsFrom": [
+            "portfolio_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "holdings_user_id_users_id_fk": {
+          "name": "holdings_user_id_users_id_fk",
+          "tableFrom": "holdings",
+          "tableTo": "users",
+          "schemaTo": "auth",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "holdings_select_own": {
+          "name": "holdings_select_own",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "public"
+          ],
+          "using": "auth.uid() = user_id"
+        },
+        "holdings_insert_own": {
+          "name": "holdings_insert_own",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "public"
+          ],
+          "withCheck": "auth.uid() = user_id"
+        },
+        "holdings_update_own": {
+          "name": "holdings_update_own",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": [
+            "public"
+          ],
+          "using": "auth.uid() = user_id",
+          "withCheck": "auth.uid() = user_id"
+        },
+        "holdings_delete_own": {
+          "name": "holdings_delete_own",
+          "as": "PERMISSIVE",
+          "for": "DELETE",
+          "to": [
+            "public"
+          ],
+          "using": "auth.uid() = user_id"
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.portfolios": {
+      "name": "portfolios",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "portfolios_user_id_idx": {
+          "name": "portfolios_user_id_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "portfolios_user_id_users_id_fk": {
+          "name": "portfolios_user_id_users_id_fk",
+          "tableFrom": "portfolios",
+          "tableTo": "users",
+          "schemaTo": "auth",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "portfolios_select_own": {
+          "name": "portfolios_select_own",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "public"
+          ],
+          "using": "auth.uid() = user_id"
+        },
+        "portfolios_insert_own": {
+          "name": "portfolios_insert_own",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "public"
+          ],
+          "withCheck": "auth.uid() = user_id"
+        },
+        "portfolios_update_own": {
+          "name": "portfolios_update_own",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": [
+            "public"
+          ],
+          "using": "auth.uid() = user_id",
+          "withCheck": "auth.uid() = user_id"
+        },
+        "portfolios_delete_own": {
+          "name": "portfolios_delete_own",
+          "as": "PERMISSIVE",
+          "for": "DELETE",
+          "to": [
+            "public"
+          ],
+          "using": "auth.uid() = user_id"
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.profiles": {
+      "name": "profiles",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "avatar_url": {
+          "name": "avatar_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'USD'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "profiles_id_users_id_fk": {
+          "name": "profiles_id_users_id_fk",
+          "tableFrom": "profiles",
+          "tableTo": "users",
+          "schemaTo": "auth",
+          "columnsFrom": [
+            "id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "profiles_select_own": {
+          "name": "profiles_select_own",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "public"
+          ],
+          "using": "auth.uid() = id"
+        },
+        "profiles_update_own": {
+          "name": "profiles_update_own",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": [
+            "public"
+          ],
+          "using": "auth.uid() = id",
+          "withCheck": "auth.uid() = id"
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.transactions": {
+      "name": "transactions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "portfolio_id": {
+          "name": "portfolio_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "coin_id": {
+          "name": "coin_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "symbol": {
+          "name": "symbol",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quantity": {
+          "name": "quantity",
+          "type": "numeric(28, 8)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "price_per_unit": {
+          "name": "price_per_unit",
+          "type": "numeric(20, 8)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total_value": {
+          "name": "total_value",
+          "type": "numeric(20, 8)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "executed_at": {
+          "name": "executed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "transactions_portfolio_id_idx": {
+          "name": "transactions_portfolio_id_idx",
+          "columns": [
+            {
+              "expression": "portfolio_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "transactions_user_id_idx": {
+          "name": "transactions_user_id_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "transactions_executed_at_idx": {
+          "name": "transactions_executed_at_idx",
+          "columns": [
+            {
+              "expression": "executed_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "transactions_portfolio_id_portfolios_id_fk": {
+          "name": "transactions_portfolio_id_portfolios_id_fk",
+          "tableFrom": "transactions",
+          "tableTo": "portfolios",
+          "columnsFrom": [
+            "portfolio_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "transactions_user_id_users_id_fk": {
+          "name": "transactions_user_id_users_id_fk",
+          "tableFrom": "transactions",
+          "tableTo": "users",
+          "schemaTo": "auth",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "transactions_select_own": {
+          "name": "transactions_select_own",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "public"
+          ],
+          "using": "auth.uid() = user_id"
+        },
+        "transactions_insert_own": {
+          "name": "transactions_insert_own",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "public"
+          ],
+          "withCheck": "auth.uid() = user_id"
+        },
+        "transactions_update_own": {
+          "name": "transactions_update_own",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": [
+            "public"
+          ],
+          "using": "auth.uid() = user_id",
+          "withCheck": "auth.uid() = user_id"
+        },
+        "transactions_delete_own": {
+          "name": "transactions_delete_own",
+          "as": "PERMISSIVE",
+          "for": "DELETE",
+          "to": [
+            "public"
+          ],
+          "using": "auth.uid() = user_id"
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.watchlist_items": {
+      "name": "watchlist_items",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "coin_id": {
+          "name": "coin_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "symbol": {
+          "name": "symbol",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "added_at": {
+          "name": "added_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "watchlist_user_id_idx": {
+          "name": "watchlist_user_id_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "watchlist_items_user_id_users_id_fk": {
+          "name": "watchlist_items_user_id_users_id_fk",
+          "tableFrom": "watchlist_items",
+          "tableTo": "users",
+          "schemaTo": "auth",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "watchlist_select_own": {
+          "name": "watchlist_select_own",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "public"
+          ],
+          "using": "auth.uid() = user_id"
+        },
+        "watchlist_insert_own": {
+          "name": "watchlist_insert_own",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "public"
+          ],
+          "withCheck": "auth.uid() = user_id"
+        },
+        "watchlist_delete_own": {
+          "name": "watchlist_delete_own",
+          "as": "PERMISSIVE",
+          "for": "DELETE",
+          "to": [
+            "public"
+          ],
+          "using": "auth.uid() = user_id"
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
