@@ -1,14 +1,19 @@
 // src/app/(dashboard)/layout.tsx
 //
-// Dashboard layout — fetches the current user once and passes it into the
-// shell. Server-side fetch: no client loading state, no flicker.
+// Dashboard layout — runs on every dashboard route.
 //
-// The middleware already guaranteed a session exists by the time this runs.
-// We still call getUser() because we need the user's email/metadata for
-// display — middleware only enforced the gate, it didn't pass data through.
+// ─── Responsibilities ────────────────────────────────────────────────────
+// 1. Auth gate (defence in depth — middleware already redirected)
+// 2. Onboarding gate — if the user hasn't completed onboarding, send them
+//    there. This lives in the layout, not middleware, because it needs a
+//    DB read (profiles.onboarded_at), and middleware should stay cheap.
+// 3. Build ShellUser for the client shell (sidebar, navbar)
+//
+// The layout is not in the onboarding route group, so redirecting here
+// doesn't loop — /onboarding uses the (auth) layout instead.
 
 import { redirect } from "next/navigation";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/auth/get-current-user";
 import DashboardShell from "@/components/layout/DashboardShell";
 
 export default async function DashboardLayout({
@@ -16,30 +21,36 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const session = await getCurrentUser();
 
-  // Defensive: middleware should have redirected. If middleware is
-  // misconfigured or bypassed (e.g. direct RSC call), we fail closed here.
-  if (!user) redirect("/login");
+  if (!session) redirect("/login");
 
+  const { auth, profile } = session;
+
+  // Profile missing means the auto-profile trigger didn't fire (misconfigured
+  // environment, or a user created through the Supabase Dashboard directly).
+  // Fail safe: send to onboarding, which will create a default profile row
+  // on first save.
+  if (!profile?.onboardedAt) {
+    redirect("/onboarding");
+  }
+
+  // `displayName` may still be null if the trigger set it to null and
+  // onboarding was skipped via some other path. Fall back to email prefix.
   const displayName =
-    (user.user_metadata?.full_name as string | undefined) ??
-    user.email?.split("@")[0] ??
-    "Account";
+    profile.displayName?.trim() || auth.email?.split("@")[0] || "Account";
 
   const initials = displayName
-    .split(" ")
+    .split(/\s+/)
     .map((part) => part[0])
+    .filter(Boolean)
     .join("")
     .slice(0, 2)
     .toUpperCase();
 
   return (
     <DashboardShell
-      user={{ email: user.email ?? "", displayName, initials }}
+      user={{ email: auth.email ?? "", displayName, initials }}
     >
       {children}
     </DashboardShell>

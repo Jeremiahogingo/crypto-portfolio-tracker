@@ -39,6 +39,7 @@ const PROTECTED_PREFIXES = [
   "/news",
   "/alerts",
   "/settings",
+  "/onboarding", 
 ];
 
 /** Routes authenticated users should be redirected *away* from. */

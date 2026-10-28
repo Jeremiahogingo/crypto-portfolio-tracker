@@ -47,12 +47,19 @@ export const profiles = pgTable(
     displayName: text("display_name"),
     avatarUrl: text("avatar_url"),
     currency: text("currency").notNull().default("USD"),
+
+    /**
+     * Set when the user finishes first-run onboarding.
+     * Null means "account exists but hasn't been configured."
+     * The dashboard layout redirects to /onboarding until this is set.
+     */
+    onboardedAt: timestamp("onboarded_at", { withTimezone: true }),
+
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
   (table) => [
-    // Users can read and update only their own profile.
     pgPolicy("profiles_select_own", {
       for: "select",
       using: sql`auth.uid() = id`,
