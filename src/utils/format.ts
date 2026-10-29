@@ -34,6 +34,30 @@ export function formatQuantity(quantity: number): string {
 }
 
 /**
+ * Absolute date + time for transaction history.
+ *
+ * Distinct from formatRelativeTime because trade history needs the actual
+ * date, not "3 hours ago" — users reconcile trades against exchange records
+ * and tax statements, which are all absolute.
+ *
+ * Format: "Oct 29, 2026 · 14:32" — compact, unambiguous, respects locale.
+ */
+export function formatDateTime(value: string | Date): string {
+  const d = typeof value === "string" ? new Date(value) : value;
+  if (!Number.isFinite(d.getTime())) return "—";
+  const date = d.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  const time = d.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `${date} · ${time}`;
+}
+
+/**
  * Signed currency for P&L displays. Always shows + or - explicitly so the
  * direction is unambiguous even when read in monochrome (accessibility —
  * relying on green/red alone fails for colour-blind users).
