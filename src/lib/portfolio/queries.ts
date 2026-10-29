@@ -21,6 +21,38 @@ import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { portfolios, holdings, type Portfolio, type Holding } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/get-current-user";
+import { desc } from "drizzle-orm";
+import { transactions, type Transaction } from "@/db/schema";
+
+/**
+ * Transaction history for a portfolio, newest first.
+ *
+ * Capped at 100 — enough for the UI to feel complete without pagination,
+ * small enough that the payload stays cheap. Real-time filtering (by coin,
+ * by type) happens client-side; Phase 4 will add server-side pagination
+ * if it's ever needed.
+ *
+ * Same user-scoping discipline as getHoldings: filter by userId AND
+ * portfolioId. RLS doesn't apply to the Drizzle path.
+ */
+export const getTransactions = cache(
+  async (portfolioId: string): Promise<Transaction[]> => {
+    const session = await getCurrentUser();
+    if (!session) return [];
+
+    return db
+      .select()
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.portfolioId, portfolioId),
+          eq(transactions.userId, session.auth.id)
+        )
+      )
+      .orderBy(desc(transactions.executedAt))
+      .limit(100);
+  }
+);
 
 /**
  * The user's default (first-created) portfolio.
