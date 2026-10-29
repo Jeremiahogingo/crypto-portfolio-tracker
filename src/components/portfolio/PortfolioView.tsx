@@ -1,17 +1,15 @@
 // src/components/portfolio/PortfolioView.tsx
 //
-// Client-side wrapper for the Portfolio page.
+// Client orchestrator for the Portfolio page.
 //
-// Receives raw holdings from the server (instant render — no loading flicker),
-// enriches with live prices via useHoldingsWithPrices, and owns the modal
-// state for Add / Edit / Delete.
+// Two entry points for changing a position:
+//   • "Add holding" — sets an initial position (2.4a). Use for backfilling
+//     existing holdings without recording every historical trade.
+//   • "Record transaction" — records an actual buy or sell against the
+//     ledger (this step). Use for ongoing activity.
 //
-// This is the pattern we use for every interactive page from here on:
-//   Page (server) → fetches DB → passes rows → View (client) → hooks + modals
-//
-// Keeping the modal state here (not in each row) avoids prop drilling and
-// means only one modal is ever open — an invariant enforced by the state
-// shape: `editTarget: HoldingWithPrice | null`.
+// Both reconcile through recomputeHolding, so the dashboard, portfolio,
+// and analytics always agree.
 
 "use client";
 
@@ -20,46 +18,64 @@ import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
 import HoldingsTable from "@/components/tables/HoldingsTable";
+import TransactionHistory from "@/components/tables/TransactionHistory";
 import AddHoldingModal from "./AddHoldingModal";
+import AddTransactionModal from "./AddTransactionModal";
 import EditHoldingModal from "./EditHoldingModal";
 import DeleteHoldingModal from "./DeleteHoldingModal";
+import DeleteTransactionModal from "./DeleteTransactionModal";
 import { useHoldingsWithPrices } from "@/hooks/useHoldingsWithPrices";
 import {
   formatPrice,
   formatSignedCurrency,
   formatPercent,
 } from "@/utils/format";
-import type { Holding } from "@/db/schema";
+import type { Holding, Transaction } from "@/db/schema";
 import type { HoldingWithPrice } from "@/types/portfolio";
 
 interface PortfolioViewProps {
   initialHoldings: Holding[];
+  initialTransactions: Transaction[];
   portfolioName: string;
 }
 
 export default function PortfolioView({
   initialHoldings,
+  initialTransactions,
   portfolioName,
 }: PortfolioViewProps) {
   const { holdings, summary, isLoadingPrices } =
     useHoldingsWithPrices(initialHoldings);
 
-  const [addOpen, setAddOpen] = useState(false);
+  const [addHoldingOpen, setAddHoldingOpen] = useState(false);
+  const [addTransactionOpen, setAddTransactionOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<HoldingWithPrice | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<HoldingWithPrice | null>(
-    null
-  );
+  const [deleteHoldingTarget, setDeleteHoldingTarget] =
+    useState<HoldingWithPrice | null>(null);
+  const [deleteTransactionTarget, setDeleteTransactionTarget] =
+    useState<Transaction | null>(null);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-text">Portfolio</h1>
           <p className="text-sm text-secondary mt-1">{portfolioName}</p>
         </div>
-        <Button variant="primary" onClick={() => setAddOpen(true)}>
-          + Add holding
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => setAddHoldingOpen(true)}
+          >
+            + Add holding
+          </Button>
+          <Button
+            variant="primary"
+            onClick={() => setAddTransactionOpen(true)}
+          >
+            + Record transaction
+          </Button>
+        </div>
       </div>
 
       {/* Summary cards */}
@@ -129,22 +145,45 @@ export default function PortfolioView({
         <HoldingsTable
           holdings={holdings}
           isLoadingPrices={isLoadingPrices}
-          onAdd={() => setAddOpen(true)}
+          onAdd={() => setAddHoldingOpen(true)}
           onEdit={setEditTarget}
-          onDelete={setDeleteTarget}
+          onDelete={setDeleteHoldingTarget}
         />
       </Card>
 
-      <AddHoldingModal isOpen={addOpen} onClose={() => setAddOpen(false)} />
+      <Card>
+        <h3 className="text-sm font-semibold text-text mb-4">
+          Transaction History
+        </h3>
+        <TransactionHistory
+          transactions={initialTransactions}
+          onDelete={setDeleteTransactionTarget}
+        />
+      </Card>
+
+      <AddHoldingModal
+        isOpen={addHoldingOpen}
+        onClose={() => setAddHoldingOpen(false)}
+      />
+      <AddTransactionModal
+        isOpen={addTransactionOpen}
+        holdings={holdings}
+        onClose={() => setAddTransactionOpen(false)}
+      />
       <EditHoldingModal
         isOpen={Boolean(editTarget)}
         holding={editTarget}
         onClose={() => setEditTarget(null)}
       />
       <DeleteHoldingModal
-        isOpen={Boolean(deleteTarget)}
-        holding={deleteTarget}
-        onClose={() => setDeleteTarget(null)}
+        isOpen={Boolean(deleteHoldingTarget)}
+        holding={deleteHoldingTarget}
+        onClose={() => setDeleteHoldingTarget(null)}
+      />
+      <DeleteTransactionModal
+        isOpen={Boolean(deleteTransactionTarget)}
+        transaction={deleteTransactionTarget}
+        onClose={() => setDeleteTransactionTarget(null)}
       />
     </div>
   );
