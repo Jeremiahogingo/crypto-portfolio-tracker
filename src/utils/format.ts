@@ -11,6 +11,48 @@
 // empty cells.
 
 /**
+ * Quantity formatter for holding sizes.
+ *
+ * Different from formatPrice because quantities have a wider valid range:
+ * 0.0001 BTC and 5,000,000 SHIB both need clean display. Rule of thumb:
+ *   • < 1        → up to 8 decimals, trimmed (crypto precision matters)
+ *   • ≥ 1        → up to 4 decimals, thousands separators
+ */
+export function formatQuantity(quantity: number): string {
+  if (!Number.isFinite(quantity)) return "—";
+  if (quantity === 0) return "0";
+  if (quantity < 1) {
+    return quantity.toLocaleString(undefined, {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 8,
+    });
+  }
+  return quantity.toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 4,
+  });
+}
+
+/**
+ * Signed currency for P&L displays. Always shows + or - explicitly so the
+ * direction is unambiguous even when read in monochrome (accessibility —
+ * relying on green/red alone fails for colour-blind users).
+ */
+export function formatSignedCurrency(value: number): string {
+  if (!Number.isFinite(value)) return "—";
+  const sign = value > 0 ? "+" : ""; // negative is included by toLocaleString
+  const abs = Math.abs(value);
+  const formatted =
+    abs >= 1000
+      ? abs.toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })
+      : abs.toFixed(2);
+  return `${value < 0 ? "-" : sign}$${formatted}`;
+}
+
+/**
  * Prices span many orders of magnitude — BTC at ~$80k, meme coins at
  * ~$0.00001. A fixed decimal count either truncates the top or hides
  * the bottom. This picks a sensible decimal count based on magnitude.
