@@ -48,5 +48,16 @@
     "prettier-plugin-tailwindcss": "^0.8.0",
     "tailwindcss": "^4.3.2",
     "typescript": "^5.9.3"
+  },
+  "allowScripts": {
+    "esbuild@0.18.20": true,
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true,
+    "unrs-resolver@1.12.2": true
+  },
+"overrides": {
+  "@typescript-eslint/typescript-estree@8.72.1": {
+    "minimatch": "11.0.1"
+    }
   }
 }
