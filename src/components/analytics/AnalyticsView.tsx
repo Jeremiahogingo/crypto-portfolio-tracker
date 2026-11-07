@@ -19,7 +19,7 @@
 
 import { useMemo } from "react";
 import Card from "@/components/ui/Card";
-import AnalyticsSummary from "./AnalyticsSummary";
+import AnalyticsSummary from "@/components/charts/AnalyticsSummary";
 import InvestmentTimelineChart from "@/components/charts/InvestmentTimelineChart";
 import MonthlyActivityChart from "@/components/charts/MonthlyActivityChart";
 import AssetPerformanceChart from "@/components/charts/AssetPerformanceChart";
