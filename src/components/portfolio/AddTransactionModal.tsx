@@ -1,31 +1,7 @@
-// src/components/portfolio/AddTransactionModal.tsx
-//
-// Record a buy or sell against the ledger.
-//
-// ─── Flow ────────────────────────────────────────────────────────────────
-// 1. Pick coin (from the top 100 by market cap, same source as AddHolding).
-// 2. Pick type: buy or sell.
-// 3. Enter quantity and price. Price auto-fills from live market data for
-//    buys (users typically transact near market) and stays editable.
-// 4. Optional: backdate the transaction. Defaults to now.
-// 5. Submit. On success: closes, holdings and history update everywhere.
-//
-// ─── Sell hint ───────────────────────────────────────────────────────────
-// When type=sell and the user already holds the coin, show the current
-// quantity so they know their limit before submitting. The server enforces
-// it (recompute throws), but a client-side hint prevents the round-trip
-// failure and is better UX.
-//
-// ─── Why no available-quantity validation client-side ────────────────────
-// Because the server owns the truth. A user could have the modal open in
-// two tabs and commit an oversell on one — the server rejects, the client
-// shows an inline error, nothing corrupts. Pre-validating client-side and
-// then hitting a race is worse than just letting the server be
-// authoritative and showing its error.
 
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useState } from "react";
 import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
 import Skeleton from "@/components/ui/Skeleton";
@@ -56,40 +32,62 @@ export default function AddTransactionModal({
   const [coinId, setCoinId] = useState("");
   const [price, setPrice] = useState("");
 
-  const selectedCoin = coins.find((c) => c.id === coinId);
-  const existingHolding = holdings.find((h) => h.coinId === coinId);
+  const selectedCoin = coins.find((coin) => coin.id === coinId);
+  const existingHolding = holdings.find(
+    (holding) => holding.coinId === coinId
+  );
 
-  // Auto-fill price from live data when coin changes and price is empty.
-  // Doesn't overwrite user input — the guard keeps manual edits intact.
-  useEffect(() => {
-    if (selectedCoin && !price) {
-      setPrice(selectedCoin.price.toString());
+  const resetForm = () => {
+    setType("buy");
+    setCoinId("");
+    setPrice("");
+  };
+
+  const handleClose = () => {
+    resetForm();
+    onClose();
+  };
+
+  const handleCoinChange = (nextCoinId: string) => {
+    setCoinId(nextCoinId);
+
+    // Use the current market price as the initial value.
+    // Preserve an existing price so manual input is not overwritten.
+    if (!price) {
+      const coin = coins.find((item) => item.id === nextCoinId);
+
+      if (coin) {
+        setPrice(coin.price.toString());
+      }
     }
-  }, [selectedCoin, price]);
+  };
 
   const [state, formAction, isPending] = useActionState<
     TransactionActionResult | null,
     FormData
   >(async (_prev, formData) => {
     const result = await addTransaction(formData);
-    if ("success" in result) onClose();
+
+    if ("success" in result) {
+      handleClose();
+    }
+
     return result;
   }, null);
 
-  // Clean up when the modal closes so reopens start fresh.
-  useEffect(() => {
-    if (!isOpen) {
-      setType("buy");
-      setCoinId("");
-      setPrice("");
-    }
-  }, [isOpen]);
-
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Record transaction">
+    <Modal
+      isOpen={isOpen}
+      onClose={handleClose}
+      title="Record transaction"
+    >
       <form action={formAction} className="space-y-4">
         <input type="hidden" name="coinId" value={coinId} />
-        <input type="hidden" name="symbol" value={selectedCoin?.symbol ?? ""} />
+        <input
+          type="hidden"
+          name="symbol"
+          value={selectedCoin?.symbol ?? ""}
+        />
         <input type="hidden" name="type" value={type} />
 
         {/* Type toggle */}
@@ -97,6 +95,7 @@ export default function AddTransactionModal({
           <label className="block text-xs font-medium text-secondary mb-2">
             Type
           </label>
+
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
@@ -109,6 +108,7 @@ export default function AddTransactionModal({
             >
               Buy
             </button>
+
             <button
               type="button"
               onClick={() => setType("sell")}
@@ -128,16 +128,18 @@ export default function AddTransactionModal({
           <label className="block text-xs font-medium text-secondary mb-2">
             Coin
           </label>
+
           {isLoading ? (
             <Skeleton className="h-10 w-full" />
           ) : (
             <select
               value={coinId}
-              onChange={(e) => setCoinId(e.target.value)}
+              onChange={(event) => handleCoinChange(event.target.value)}
               required
               className="w-full bg-surface border border-white/10 rounded-lg px-3 py-2 text-sm text-text focus:outline-none focus:border-primary"
             >
               <option value="">Select a coin…</option>
+
               {coins.map((coin) => (
                 <option key={coin.id} value={coin.id}>
                   {coin.symbol} — {coin.name} ({formatPrice(coin.price)})
@@ -155,10 +157,12 @@ export default function AddTransactionModal({
               alt={selectedCoin.name}
               size="md"
             />
+
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-text truncate">
                 {selectedCoin.name}
               </p>
+
               <p className="text-xs text-secondary">
                 {type === "sell" && existingHolding
                   ? `You hold ${formatQuantity(existingHolding.quantity)} ${existingHolding.symbol}`
@@ -168,12 +172,13 @@ export default function AddTransactionModal({
           </div>
         )}
 
-        {/* Quantity + price in a two-column row */}
+        {/* Quantity + price */}
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-medium text-secondary mb-2">
               Quantity
             </label>
+
             <input
               type="number"
               name="quantity"
@@ -184,10 +189,12 @@ export default function AddTransactionModal({
               className="w-full bg-surface border border-white/10 rounded-lg px-3 py-2 text-sm text-text placeholder-secondary focus:outline-none focus:border-primary"
             />
           </div>
+
           <div>
             <label className="block text-xs font-medium text-secondary mb-2">
               Price per unit (USD)
             </label>
+
             <input
               type="number"
               name="pricePerUnit"
@@ -195,7 +202,7 @@ export default function AddTransactionModal({
               min="0"
               required
               value={price}
-              onChange={(e) => setPrice(e.target.value)}
+              onChange={(event) => setPrice(event.target.value)}
               placeholder="65000"
               className="w-full bg-surface border border-white/10 rounded-lg px-3 py-2 text-sm text-text placeholder-secondary focus:outline-none focus:border-primary"
             />
@@ -207,11 +214,13 @@ export default function AddTransactionModal({
           <label className="block text-xs font-medium text-secondary mb-2">
             When
           </label>
+
           <input
             type="datetime-local"
             name="executedAt"
             className="w-full bg-surface border border-white/10 rounded-lg px-3 py-2 text-sm text-text focus:outline-none focus:border-primary"
           />
+
           <p className="text-xs text-secondary mt-1">
             Leave blank for now — useful for backfilling historical trades.
           </p>
@@ -222,6 +231,7 @@ export default function AddTransactionModal({
           <label className="block text-xs font-medium text-secondary mb-2">
             Notes (optional)
           </label>
+
           <input
             type="text"
             name="notes"
@@ -241,11 +251,12 @@ export default function AddTransactionModal({
           <Button
             type="button"
             variant="secondary"
-            onClick={onClose}
+            onClick={handleClose}
             disabled={isPending}
           >
             Cancel
           </Button>
+
           <Button
             type="submit"
             variant="primary"
@@ -254,8 +265,8 @@ export default function AddTransactionModal({
             {isPending
               ? "Recording…"
               : type === "buy"
-              ? "Record buy"
-              : "Record sell"}
+                ? "Record buy"
+                : "Record sell"}
           </Button>
         </div>
       </form>

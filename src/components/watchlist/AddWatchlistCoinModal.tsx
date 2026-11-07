@@ -1,20 +1,7 @@
-// src/components/watchlist/AddWatchlistCoinModal.tsx
-//
-// Modal for adding a coin to the watchlist.
-//
-// Coin picker pulls from the top 100 by market cap — the same set used by
-// AddHoldingModal. That covers ~99% of users' interest. Adding search
-// across all coins is deferred to Phase 5; using the top 100 keeps the
-// modal self-contained and the payload small.
-//
-// Coins already in the watchlist are filtered out of the dropdown — no
-// reason to show a coin the user can't act on. If the user has every coin
-// in the top 100 (unlikely), the dropdown would be empty; the submit
-// button disables itself in that case.
 
 "use client";
 
-import { useActionState, useEffect, useMemo, useState } from "react";
+import { useActionState, useMemo, useState } from "react";
 import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
 import Skeleton from "@/components/ui/Skeleton";
@@ -27,7 +14,7 @@ import { formatPrice } from "@/utils/format";
 
 interface AddWatchlistCoinModalProps {
   isOpen: boolean;
-  /** Coin IDs already in the watchlist — excluded from the dropdown. */
+  /** Coin IDs already tracked by the user; these are excluded from selection. */
   existingCoinIds: string[];
   onClose: () => void;
 }
@@ -40,31 +27,44 @@ export default function AddWatchlistCoinModal({
   const { coins, isLoading } = useMarkets({ per_page: 100 });
   const [selectedCoinId, setSelectedCoinId] = useState("");
 
-  const available = useMemo(() => {
-    const existing = new Set(existingCoinIds);
-    return coins.filter((c) => !existing.has(c.id));
+  // Exclude existing entries to prevent users selecting duplicate watchlist items.
+  const availableCoins = useMemo(() => {
+    const existingIds = new Set(existingCoinIds);
+    return coins.filter((coin) => !existingIds.has(coin.id));
   }, [coins, existingCoinIds]);
 
-  const selectedCoin = available.find((c) => c.id === selectedCoinId);
+  const selectedCoin = availableCoins.find(
+    (coin) => coin.id === selectedCoinId
+  );
+
+  const resetForm = () => {
+    setSelectedCoinId("");
+  };
+
+  const handleClose = () => {
+    resetForm();
+    onClose();
+  };
 
   const [state, formAction, isPending] = useActionState<
     WatchlistActionResult | null,
     FormData
   >(async (_prev, formData) => {
     const result = await addToWatchlist(formData);
+
     if ("success" in result) {
-      setSelectedCoinId("");
-      onClose();
+      handleClose();
     }
+
     return result;
   }, null);
 
-  useEffect(() => {
-    if (!isOpen) setSelectedCoinId("");
-  }, [isOpen]);
-
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Add to watchlist">
+    <Modal
+      isOpen={isOpen}
+      onClose={handleClose}
+      title="Add to watchlist"
+    >
       <form action={formAction} className="space-y-4">
         <input type="hidden" name="coinId" value={selectedCoinId} />
         <input
@@ -77,21 +77,23 @@ export default function AddWatchlistCoinModal({
           <label className="block text-xs font-medium text-secondary mb-2">
             Coin
           </label>
+
           {isLoading ? (
             <Skeleton className="h-10 w-full" />
-          ) : available.length === 0 ? (
+          ) : availableCoins.length === 0 ? (
             <p className="text-sm text-secondary py-2">
               All top-100 coins are already in your watchlist.
             </p>
           ) : (
             <select
               value={selectedCoinId}
-              onChange={(e) => setSelectedCoinId(e.target.value)}
+              onChange={(event) => setSelectedCoinId(event.target.value)}
               required
               className="w-full bg-surface border border-white/10 rounded-lg px-3 py-2 text-sm text-text focus:outline-none focus:border-primary"
             >
               <option value="">Select a coin…</option>
-              {available.map((coin) => (
+
+              {availableCoins.map((coin) => (
                 <option key={coin.id} value={coin.id}>
                   {coin.symbol} — {coin.name} ({formatPrice(coin.price)})
                 </option>
@@ -110,11 +112,12 @@ export default function AddWatchlistCoinModal({
           <Button
             type="button"
             variant="secondary"
-            onClick={onClose}
+            onClick={handleClose}
             disabled={isPending}
           >
             Cancel
           </Button>
+
           <Button
             type="submit"
             variant="primary"

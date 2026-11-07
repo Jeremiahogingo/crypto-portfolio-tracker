@@ -1,24 +1,7 @@
-// src/components/alerts/CreateAlertModal.tsx
-//
-// Create a price alert.
-//
-// Same coin picker as AddHoldingModal / AddWatchlistCoinModal — the top 100
-// by market cap via useMarkets. Target price defaults to a sensible offset
-// from the current price based on condition:
-//   • "above" → current price + 20%
-//   • "below" → current price − 20%
-// This is a soft suggestion, not a hard default. Users editing the field
-// for a specific thesis will overwrite it; users exploring will start with
-// a reasonable number.
-//
-// The action validates server-side. If a user submits a stale form (e.g.
-// current price moved since the modal opened), the server still enforces
-// the target > 0 rule — an oversold or nonsensical value would be rejected
-// with a specific message.
 
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useState } from "react";
 import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
 import Skeleton from "@/components/ui/Skeleton";
@@ -43,62 +26,85 @@ export default function CreateAlertModal({
 
   const [coinId, setCoinId] = useState("");
   const [condition, setCondition] = useState<"above" | "below">("above");
-  const [targetPrice, setTargetPrice] = useState("");
 
-  const selectedCoin = coins.find((c) => c.id === coinId);
+  // null means the user has not manually entered a target price.
+  const [targetPriceOverride, setTargetPriceOverride] = useState<
+    string | null
+  >(null);
 
-  // Auto-suggest a target price when a coin is selected. Cleared on coin
-  // change so switching coins doesn't leave a target tuned for the old one.
-  useEffect(() => {
-    if (selectedCoin) {
-      const multiplier = condition === "above" ? 1.2 : 0.8;
-      setTargetPrice((selectedCoin.price * multiplier).toFixed(2));
-    }
-  }, [selectedCoin, condition]);
+  const selectedCoin = coins.find((coin) => coin.id === coinId);
+
+  // Derive the suggested target rather than synchronizing it with an effect.
+  const suggestedTargetPrice = selectedCoin
+    ? (
+        selectedCoin.price * (condition === "above" ? 1.2 : 0.8)
+      ).toFixed(2)
+    : "";
+
+  const targetPrice = targetPriceOverride ?? suggestedTargetPrice;
+
+  const resetForm = () => {
+    setCoinId("");
+    setCondition("above");
+    setTargetPriceOverride(null);
+  };
+
+  const handleClose = () => {
+    resetForm();
+    onClose();
+  };
 
   const [state, formAction, isPending] = useActionState<
     AlertActionResult | null,
     FormData
   >(async (_prev, formData) => {
     const result = await createAlert(formData);
+
     if ("success" in result) {
-      setCoinId("");
-      setCondition("above");
-      setTargetPrice("");
+      resetForm();
       onClose();
     }
+
     return result;
   }, null);
 
-  useEffect(() => {
-    if (!isOpen) {
-      setCoinId("");
-      setCondition("above");
-      setTargetPrice("");
-    }
-  }, [isOpen]);
+  const handleCoinChange = (nextCoinId: string) => {
+    setCoinId(nextCoinId);
+    setTargetPriceOverride(null);
+  };
+
+  const handleConditionChange = (nextCondition: "above" | "below") => {
+    setCondition(nextCondition);
+    setTargetPriceOverride(null);
+  };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Create alert">
+    <Modal isOpen={isOpen} onClose={handleClose} title="Create alert">
       <form action={formAction} className="space-y-4">
         <input type="hidden" name="coinId" value={coinId} />
-        <input type="hidden" name="symbol" value={selectedCoin?.symbol ?? ""} />
+        <input
+          type="hidden"
+          name="symbol"
+          value={selectedCoin?.symbol ?? ""}
+        />
         <input type="hidden" name="condition" value={condition} />
 
         <div>
           <label className="block text-xs font-medium text-secondary mb-2">
             Coin
           </label>
+
           {isLoading ? (
             <Skeleton className="h-10 w-full" />
           ) : (
             <select
               value={coinId}
-              onChange={(e) => setCoinId(e.target.value)}
+              onChange={(event) => handleCoinChange(event.target.value)}
               required
               className="w-full bg-surface border border-white/10 rounded-lg px-3 py-2 text-sm text-text focus:outline-none focus:border-primary"
             >
               <option value="">Select a coin…</option>
+
               {coins.map((coin) => (
                 <option key={coin.id} value={coin.id}>
                   {coin.symbol} — {coin.name} ({formatPrice(coin.price)})
@@ -115,10 +121,12 @@ export default function CreateAlertModal({
               alt={selectedCoin.name}
               size="md"
             />
+
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-text truncate">
                 {selectedCoin.name}
               </p>
+
               <p className="text-xs text-secondary">
                 Current price: {formatPrice(selectedCoin.price)}
               </p>
@@ -130,10 +138,11 @@ export default function CreateAlertModal({
           <label className="block text-xs font-medium text-secondary mb-2">
             Condition
           </label>
+
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
-              onClick={() => setCondition("above")}
+              onClick={() => handleConditionChange("above")}
               className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                 condition === "above"
                   ? "bg-primary text-white"
@@ -142,9 +151,10 @@ export default function CreateAlertModal({
             >
               Price above
             </button>
+
             <button
               type="button"
-              onClick={() => setCondition("below")}
+              onClick={() => handleConditionChange("below")}
               className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                 condition === "below"
                   ? "bg-primary text-white"
@@ -160,6 +170,7 @@ export default function CreateAlertModal({
           <label className="block text-xs font-medium text-secondary mb-2">
             Target price (USD)
           </label>
+
           <input
             type="number"
             name="targetPrice"
@@ -167,12 +178,16 @@ export default function CreateAlertModal({
             min="0"
             required
             value={targetPrice}
-            onChange={(e) => setTargetPrice(e.target.value)}
+            onChange={(event) =>
+              setTargetPriceOverride(event.target.value)
+            }
             placeholder="Enter target"
             className="w-full bg-surface border border-white/10 rounded-lg px-3 py-2 text-sm text-text placeholder-secondary focus:outline-none focus:border-primary"
           />
+
           <p className="text-xs text-secondary mt-1">
-            You&apos;ll see a "Target hit" badge when this price is crossed.
+            You&apos;ll see a &quot;Target hit&quot; badge when this price is
+            crossed.
           </p>
         </div>
 
@@ -186,11 +201,12 @@ export default function CreateAlertModal({
           <Button
             type="button"
             variant="secondary"
-            onClick={onClose}
+            onClick={handleClose}
             disabled={isPending}
           >
             Cancel
           </Button>
+
           <Button
             type="submit"
             variant="primary"
