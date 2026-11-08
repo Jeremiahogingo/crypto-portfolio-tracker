@@ -27,7 +27,6 @@ import {
   timestamp,
   numeric,
   boolean,
-  integer,
   pgPolicy,
   index,
 } from "drizzle-orm/pg-core";
@@ -59,7 +58,7 @@ export const profiles = pgTable(
       .notNull()
       .defaultNow(),
   },
-  (table) => [
+  () => [
     pgPolicy("profiles_select_own", {
       for: "select",
       using: sql`auth.uid() = id`,
@@ -315,10 +314,9 @@ export const alerts = pgTable(
 // how to traverse. Without these, db.query.portfolios.findMany({ with: ... })
 // fails with a type error that looks like a missing table[reference:2].
 
-export const profilesRelations = relations(profiles, ({ one }) => ({
-  // profile.id === auth user id, so this is a one-to-one with auth.users.
-  // Drizzle's authUsers table is provided by drizzle-orm/supabase.
-}));
+// Supabase manages authentication users separately. The primary-key
+// foreign key on profiles.id enforces the identity relationship.
+export const profilesRelations = relations(profiles, () => ({}));
 
 export const portfoliosRelations = relations(portfolios, ({ many }) => ({
   holdings: many(holdings),

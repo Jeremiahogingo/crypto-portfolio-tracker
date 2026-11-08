@@ -1,17 +1,10 @@
 // src/components/portfolio/EditHoldingModal.tsx
-//
-// Edit modal for adjusting a holding's quantity or cost basis.
-//
-// Per the design note at the top of src/lib/actions/holdings.ts, editing
-// is a correction mechanism — it does not modify the transaction ledger.
-// The modal's copy makes this explicit so users understand the semantics.
 
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState } from "react";
 import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
-import CoinLogo from "@/components/ui/CoinLogo";
 import { updateHolding, type HoldingsActionResult } from "@/lib/actions/holdings";
 import type { HoldingWithPrice } from "@/types/portfolio";
 
@@ -31,13 +24,13 @@ export default function EditHoldingModal({
     FormData
   >(async (_prev, formData) => {
     const result = await updateHolding(formData);
+
     if ("success" in result) onClose();
+
     return result;
   }, null);
 
-  // Nothing to edit — return null before the modal shell renders.
-  // (Modal itself returns null when isOpen is false, but skipping this
-  // avoids the hook running with a null holding.)
+  // Do not render an editing form until a holding has been selected.
   if (!holding) return null;
 
   return (
@@ -94,9 +87,15 @@ export default function EditHoldingModal({
         )}
 
         <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/5">
-          <Button type="button" variant="secondary" onClick={onClose} disabled={isPending}>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={onClose}
+            disabled={isPending}
+          >
             Cancel
           </Button>
+
           <Button type="submit" variant="primary" disabled={isPending}>
             {isPending ? "Saving…" : "Save changes"}
           </Button>
