@@ -1,18 +1,18 @@
 // src/lib/supabase/admin.ts
 //
-// Service-role Supabase client — bypasses Row Level Security.
+// Privileged Supabase client.
 //
-// Used ONLY for trusted server-side operations that need to act on behalf of
-// any user: cron jobs that scan alerts, admin actions, or backfilling data.
-// NEVER import into a Client Component, and NEVER call on a route reachable
-// without authorization — the service role key can read/write every row.
+// SECURITY:
+// The service-role key bypasses Row Level Security.
 //
-// For normal user-scoped queries (99% of cases), use:
-//   • @/lib/supabase/client  → Client Components
-//   • @/lib/supabase/server  → Server Components / Actions / Route Handlers
+// This client must only be used in trusted server-side operations such as
+// controlled administrative tasks and background jobs.
 //
-// This file is not currently used but is created now so the pattern is
-// explicit — when Step 2.5 adds alert-scanning, we'll reach for this.
+// Never expose the service-role key to a browser or Client Component.
+// Normal user-scoped operations should use the regular server Supabase
+// client instead.
+
+import "server-only";
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -22,8 +22,6 @@ export function createSupabaseAdminClient() {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     {
       auth: {
-        // Service role bypasses user auth entirely — no need to persist a
-        // session, and persisting one would leak across requests.
         persistSession: false,
         autoRefreshToken: false,
       },
