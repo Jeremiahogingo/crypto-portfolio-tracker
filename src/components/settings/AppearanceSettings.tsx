@@ -1,16 +1,22 @@
+
 "use client";
 
 import Card from "@/components/ui/Card";
 import SettingRow from "./SettingRow";
 import Toggle from "./Toggle";
 
+interface AppearanceSettingsState {
+  theme: "dark" | "light";
+  compactMode: boolean;
+  showSparklines: boolean;
+}
+
 interface Props {
-  settings: {
-    theme: "dark" | "light";
-    compactMode: boolean;
-    showSparklines: boolean;
-  };
-  onChange: (key: string, value: any) => void;
+  settings: AppearanceSettingsState;
+  onChange: <K extends keyof AppearanceSettingsState>(
+    key: K,
+    value: AppearanceSettingsState[K]
+  ) => void;
 }
 
 export default function AppearanceSettings({ settings, onChange }: Props) {
@@ -30,6 +36,7 @@ export default function AppearanceSettings({ settings, onChange }: Props) {
           >
             🌙 Dark
           </button>
+
           <button
             onClick={() => onChange("theme", "light")}
             className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${

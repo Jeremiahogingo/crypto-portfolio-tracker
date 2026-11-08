@@ -1,21 +1,33 @@
+
 "use client";
 
 import Card from "@/components/ui/Card";
 import SettingRow from "./SettingRow";
 import Toggle from "./Toggle";
 
-interface Props {
-  settings: {
-    priceAlerts: boolean;
-    newsUpdates: boolean;
-    weeklyReport: boolean;
-    marketingEmails: boolean;
-    pushNotifications: boolean;
-  };
-  onChange: (key: string, value: any) => void;
+interface NotificationSettingsState {
+  priceAlerts: boolean;
+  newsUpdates: boolean;
+  weeklyReport: boolean;
+  marketingEmails: boolean;
+  pushNotifications: boolean;
 }
 
-const rows = [
+type NotificationSettingKey = keyof NotificationSettingsState;
+
+interface Props {
+  settings: NotificationSettingsState;
+  onChange: <K extends NotificationSettingKey>(
+    key: K,
+    value: NotificationSettingsState[K]
+  ) => void;
+}
+
+const rows: {
+  key: NotificationSettingKey;
+  label: string;
+  description: string;
+}[] = [
   {
     key: "priceAlerts",
     label: "Price Alerts",
@@ -47,6 +59,7 @@ export default function NotificationSettings({ settings, onChange }: Props) {
   return (
     <Card>
       <h2 className="text-base font-semibold text-text mb-4">Notifications</h2>
+
       {rows.map((row, i) => (
         <SettingRow
           key={row.key}
@@ -55,7 +68,7 @@ export default function NotificationSettings({ settings, onChange }: Props) {
           borderBottom={i < rows.length - 1}
         >
           <Toggle
-            checked={(settings as any)[row.key]}
+            checked={settings[row.key]}
             onChange={(val) => onChange(row.key, val)}
           />
         </SettingRow>

@@ -1,3 +1,4 @@
+
 "use client";
 
 import Card from "@/components/ui/Card";
@@ -5,12 +6,17 @@ import SettingRow from "./SettingRow";
 import Toggle from "./Toggle";
 import Button from "@/components/ui/Button";
 
+interface SecuritySettingsState {
+  twoFactor: boolean;
+  sessionTimeout: string;
+}
+
 interface Props {
-  settings: {
-    twoFactor: boolean;
-    sessionTimeout: string;
-  };
-  onChange: (key: string, value: any) => void;
+  settings: SecuritySettingsState;
+  onChange: <K extends keyof SecuritySettingsState>(
+    key: K,
+    value: SecuritySettingsState[K]
+  ) => void;
 }
 
 export default function SecuritySettings({ settings, onChange }: Props) {
@@ -56,9 +62,11 @@ export default function SecuritySettings({ settings, onChange }: Props) {
 
       <div className="mt-6 pt-6 border-t border-white/5">
         <h3 className="text-sm font-medium text-danger mb-2">Danger Zone</h3>
+
         <p className="text-xs text-secondary mb-4">
           Once you delete your account, there is no going back.
         </p>
+
         <Button variant="danger" size="sm">
           Delete Account
         </Button>

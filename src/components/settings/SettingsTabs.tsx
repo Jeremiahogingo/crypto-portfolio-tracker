@@ -1,12 +1,4 @@
 // src/components/settings/SettingsTabs.tsx
-//
-// Client component that owns the settings tab state. Extracted from the
-// previous page.tsx so that page can be a Server Component and fetch
-// profile data from the DB.
-//
-// Profile data flows in via props. Other tabs (Appearance, Notifications,
-// Regional, Security) still use local state from src/mock/settings.ts
-// for the moment — Phase 2.6 will convert them to server-backed state.
 
 "use client";
 
@@ -27,48 +19,107 @@ interface SettingsTabsProps {
   };
 }
 
+interface AppearanceSettingsState {
+  theme: "dark" | "light";
+  compactMode: boolean;
+  showSparklines: boolean;
+}
+
+interface NotificationSettingsState {
+  priceAlerts: boolean;
+  newsUpdates: boolean;
+  weeklyReport: boolean;
+  marketingEmails: boolean;
+  pushNotifications: boolean;
+}
+
+interface SecuritySettingsState {
+  twoFactor: boolean;
+  sessionTimeout: string;
+}
+
+interface SettingsState {
+  appearance: AppearanceSettingsState;
+  notifications: NotificationSettingsState;
+  currency: string;
+  language: string;
+  security: SecuritySettingsState;
+}
+
 const TABS = [
   { id: "appearance", label: "Appearance" },
   { id: "notifications", label: "Notifications" },
   { id: "regional", label: "Currency & Language" },
   { id: "profile", label: "Profile" },
   { id: "security", label: "Security" },
-];
+] as const;
+
+type SettingsTabId = (typeof TABS)[number]["id"];
 
 export default function SettingsTabs({ profile }: SettingsTabsProps) {
   const { theme, toggleTheme } = useTheme();
-  const [activeTab, setActiveTab] = useState("appearance");
-  const [settings, setSettings] = useState(defaultSettings);
+
+  const [activeTab, setActiveTab] =
+    useState<SettingsTabId>("appearance");
+
+  const [settings, setSettings] =
+    useState<SettingsState>(defaultSettings);
 
   useEffect(() => {
     if (settings.appearance.theme !== theme) {
       toggleTheme();
     }
+    // The effect synchronizes the local appearance preference with the theme context.
+    // Its trigger remains the local preference change to avoid reacting to external theme updates.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.appearance.theme]);
 
-  const updateAppearance = (key: string, value: any) => {
+  const updateAppearance = <K extends keyof AppearanceSettingsState>(
+    key: K,
+    value: AppearanceSettingsState[K]
+  ) => {
     setSettings((prev) => ({
       ...prev,
-      appearance: { ...prev.appearance, [key]: value },
+      appearance: {
+        ...prev.appearance,
+        [key]: value,
+      },
     }));
   };
 
-  const updateNotification = (key: string, value: any) => {
+  const updateNotification = <K extends keyof NotificationSettingsState>(
+    key: K,
+    value: NotificationSettingsState[K]
+  ) => {
     setSettings((prev) => ({
       ...prev,
-      notifications: { ...prev.notifications, [key]: value },
+      notifications: {
+        ...prev.notifications,
+        [key]: value,
+      },
     }));
   };
 
-  const updateRegional = (key: "currency" | "language", value: string) => {
-    setSettings((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const updateSecurity = (key: string, value: any) => {
+  const updateRegional = (
+    key: "currency" | "language",
+    value: string
+  ) => {
     setSettings((prev) => ({
       ...prev,
-      security: { ...prev.security, [key]: value },
+      [key]: value,
+    }));
+  };
+
+  const updateSecurity = <K extends keyof SecuritySettingsState>(
+    key: K,
+    value: SecuritySettingsState[K]
+  ) => {
+    setSettings((prev) => ({
+      ...prev,
+      security: {
+        ...prev.security,
+        [key]: value,
+      },
     }));
   };
 
@@ -97,12 +148,14 @@ export default function SettingsTabs({ profile }: SettingsTabsProps) {
             onChange={updateAppearance}
           />
         )}
+
         {activeTab === "notifications" && (
           <NotificationSettings
             settings={settings.notifications}
             onChange={updateNotification}
           />
         )}
+
         {activeTab === "regional" && (
           <RegionalSettings
             currency={settings.currency}
@@ -110,6 +163,7 @@ export default function SettingsTabs({ profile }: SettingsTabsProps) {
             onChange={updateRegional}
           />
         )}
+
         {activeTab === "profile" && (
           <ProfileSettings
             initialName={profile.name}
@@ -117,6 +171,7 @@ export default function SettingsTabs({ profile }: SettingsTabsProps) {
             email={profile.email}
           />
         )}
+
         {activeTab === "security" && (
           <SecuritySettings
             settings={settings.security}
