@@ -1,23 +1,30 @@
 // src/components/charts/ConcentrationChart.tsx
-//
-// Doughnut of top-N holdings by value. Honest replacement for the old
-// "Risk Distribution" mock chart — see the file header of
-// src/lib/analytics/calc.ts for the reasoning.
-//
-// Palette cycles through 10 colors; over-concentrated portfolios (top 2-3
-// coins dominating) render meaningfully even when N=8.
 
 "use client";
 
 import { Doughnut } from "react-chartjs-2";
-import { Chart as ChartJS, ArcElement, Tooltip, Legend } from "chart.js";
+import {
+  Chart as ChartJS,
+  ArcElement,
+  Tooltip,
+  Legend,
+} from "chart.js";
+import type { ChartOptions } from "chart.js";
 import type { ConcentrationEntry } from "@/lib/analytics/calc";
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
 const PALETTE = [
-  "#F7931A", "#627EEA", "#9945FF", "#F0B90B", "#22C55E",
-  "#3B82F6", "#EF4444", "#94A3B8", "#F59E0B", "#A855F7",
+  "#F7931A",
+  "#627EEA",
+  "#9945FF",
+  "#F0B90B",
+  "#22C55E",
+  "#3B82F6",
+  "#EF4444",
+  "#94A3B8",
+  "#F59E0B",
+  "#A855F7",
 ];
 
 interface ConcentrationChartProps {
@@ -55,12 +62,12 @@ export default function ConcentrationChart({
     ],
   };
 
-  const options = {
+  const options: ChartOptions<"doughnut"> = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
       legend: {
-        position: "bottom" as const,
+        position: "bottom",
         labels: {
           color: "#94A3B8",
           padding: 10,
@@ -75,8 +82,12 @@ export default function ConcentrationChart({
         borderColor: "rgba(255,255,255,0.05)",
         borderWidth: 1,
         callbacks: {
-          label: (context: any) => {
+          label: (context) => {
             const entry = entries[context.dataIndex];
+
+            // Guard against an index that no longer matches the source entries.
+            if (!entry) return "";
+
             return ` ${entry.symbol}: $${entry.value.toLocaleString(undefined, {
               maximumFractionDigits: 0,
             })} (${entry.percent.toFixed(1)}%)`;

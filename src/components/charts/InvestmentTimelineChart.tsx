@@ -1,12 +1,4 @@
 // src/components/charts/InvestmentTimelineChart.tsx
-//
-// Cumulative net-invested line. Feeds both the Dashboard (small card) and
-// the Analytics page (full card). Takes `points` as a prop so the caller
-// controls the data window and re-render cadence.
-//
-// When `points` is empty (no transactions), renders an honest empty state
-// instead of an empty grid — the difference between "broken" and "you
-// haven't done anything yet" is important for first-run UX.
 
 "use client";
 
@@ -20,6 +12,7 @@ import {
   Tooltip,
   Legend,
 } from "chart.js";
+import type { ChartOptions } from "chart.js";
 import { Line } from "react-chartjs-2";
 import type { InvestmentPoint } from "@/lib/analytics/calc";
 
@@ -72,7 +65,7 @@ export default function InvestmentTimelineChart({
     ],
   };
 
-  const options = {
+  const options: ChartOptions<"line"> = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
@@ -84,8 +77,8 @@ export default function InvestmentTimelineChart({
         borderColor: "rgba(255,255,255,0.05)",
         borderWidth: 1,
         callbacks: {
-          label: (context: any) =>
-            `$${(context.raw as number).toLocaleString(undefined, {
+          label: (context) =>
+            `$${Number(context.raw).toLocaleString(undefined, {
               maximumFractionDigits: 0,
             })}`,
         },
@@ -100,7 +93,7 @@ export default function InvestmentTimelineChart({
         grid: { color: "rgba(255,255,255,0.05)" },
         ticks: {
           color: "#94A3B8",
-          callback: (v: any) => "$" + Number(v).toLocaleString(),
+          callback: (value) => "$" + Number(value).toLocaleString(),
         },
       },
     },

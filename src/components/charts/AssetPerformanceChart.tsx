@@ -1,10 +1,4 @@
 // src/components/charts/AssetPerformanceChart.tsx
-//
-// Horizontal bar chart of ROI % per coin. Horizontal because coin symbols
-// are wider than tall — labels on the y-axis read naturally.
-//
-// Colored by sign (green = profit, red = loss) so the reader can scan for
-// the best/worst performer without reading numbers.
 
 "use client";
 
@@ -16,6 +10,7 @@ import {
   Tooltip,
   Legend,
 } from "chart.js";
+import type { ChartOptions } from "chart.js";
 import { Bar } from "react-chartjs-2";
 import type { PerformanceEntry } from "@/lib/analytics/calc";
 
@@ -58,8 +53,8 @@ export default function AssetPerformanceChart({
     ],
   };
 
-  const options = {
-    indexAxis: "y" as const,
+  const options: ChartOptions<"bar"> = {
+    indexAxis: "y",
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
@@ -71,17 +66,23 @@ export default function AssetPerformanceChart({
         borderColor: "rgba(255,255,255,0.05)",
         borderWidth: 1,
         callbacks: {
-          label: (context: any) =>
-            `${(context.raw as number).toFixed(2)}% ROI`,
+          label: (context) =>
+            `${Number(context.raw).toFixed(2)}% ROI`,
         },
       },
     },
     scales: {
       x: {
         grid: { color: "rgba(255,255,255,0.05)" },
-        ticks: { color: "#94A3B8", callback: (v: any) => v + "%" },
+        ticks: {
+          color: "#94A3B8",
+          callback: (value) => `${value}%`,
+        },
       },
-      y: { grid: { display: false }, ticks: { color: "#94A3B8" } },
+      y: {
+        grid: { display: false },
+        ticks: { color: "#94A3B8" },
+      },
     },
   };
 

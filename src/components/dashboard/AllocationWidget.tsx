@@ -1,14 +1,4 @@
 // src/components/dashboard/AllocationWidget.tsx
-//
-// Allocation doughnut. Computed from real holdings + live prices.
-//
-// When there are zero holdings (or zero total value — all delisted coins),
-// shows an empty state instead of an empty doughnut. An empty doughnut
-// looks like a rendering bug; a proper message is honest.
-//
-// Colors cycle through a fixed palette so the same coin gets the same
-// colour every reload. Palette length (8) covers typical portfolios;
-// larger ones repeat colours, which is acceptable for a small chart.
 
 "use client";
 
@@ -20,6 +10,7 @@ import {
   Tooltip,
   Legend,
 } from "chart.js";
+import type { ChartOptions } from "chart.js";
 import Card from "@/components/ui/Card";
 import { useHoldingsWithPrices } from "@/hooks/useHoldingsWithPrices";
 import { formatPrice } from "@/utils/format";
@@ -42,7 +33,9 @@ interface AllocationWidgetProps {
   rawHoldings: Holding[];
 }
 
-export default function AllocationWidget({ rawHoldings }: AllocationWidgetProps) {
+export default function AllocationWidget({
+  rawHoldings,
+}: AllocationWidgetProps) {
   const { allocation, isLoadingPrices } = useHoldingsWithPrices(rawHoldings);
 
   const data = useMemo(
@@ -62,17 +55,17 @@ export default function AllocationWidget({ rawHoldings }: AllocationWidgetProps)
     [allocation]
   );
 
-  const options = {
+  const options: ChartOptions<"doughnut"> = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
       legend: {
-        position: "bottom" as const,
+        position: "bottom",
         labels: {
           color: "#94A3B8",
           padding: 12,
           usePointStyle: true,
-          pointStyle: "circle" as const,
+          pointStyle: "circle",
         },
       },
       tooltip: {
@@ -82,8 +75,8 @@ export default function AllocationWidget({ rawHoldings }: AllocationWidgetProps)
         borderColor: "rgba(255,255,255,0.05)",
         borderWidth: 1,
         callbacks: {
-          label: (context: any) => {
-            const value = context.raw as number;
+          label: (context) => {
+            const value = Number(context.raw);
             return ` ${context.label}: ${formatPrice(value)}`;
           },
         },
@@ -94,6 +87,7 @@ export default function AllocationWidget({ rawHoldings }: AllocationWidgetProps)
   return (
     <Card>
       <h3 className="text-sm font-semibold text-text mb-4">Asset Allocation</h3>
+
       {allocation.length === 0 ? (
         <div className="h-[260px] flex flex-col items-center justify-center text-center">
           <span className="text-3xl mb-2">📊</span>

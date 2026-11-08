@@ -1,10 +1,4 @@
 // src/components/charts/MonthlyActivityChart.tsx
-//
-// Buys vs sells per month, grouped bar chart. Shows trading cadence —
-// "am I being active?" — which is a distinct question from "am I up?".
-//
-// Grouped (side-by-side) rather than stacked because the user wants to
-// compare buy volume against sell volume, not see total trading volume.
 
 "use client";
 
@@ -16,6 +10,7 @@ import {
   Tooltip,
   Legend,
 } from "chart.js";
+import type { ChartOptions } from "chart.js";
 import { Bar } from "react-chartjs-2";
 import type { ActivityPoint } from "@/lib/analytics/calc";
 
@@ -62,13 +57,17 @@ export default function MonthlyActivityChart({
     ],
   };
 
-  const options = {
+  const options: ChartOptions<"bar"> = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
       legend: {
-        position: "bottom" as const,
-        labels: { color: "#94A3B8", usePointStyle: true, padding: 12 },
+        position: "bottom",
+        labels: {
+          color: "#94A3B8",
+          usePointStyle: true,
+          padding: 12,
+        },
       },
       tooltip: {
         backgroundColor: "#111827",
@@ -77,8 +76,8 @@ export default function MonthlyActivityChart({
         borderColor: "rgba(255,255,255,0.05)",
         borderWidth: 1,
         callbacks: {
-          label: (context: any) =>
-            ` ${context.dataset.label}: $${(context.raw as number).toLocaleString(
+          label: (context) =>
+            ` ${context.dataset.label}: $${Number(context.raw).toLocaleString(
               undefined,
               { maximumFractionDigits: 0 }
             )}`,
@@ -86,12 +85,15 @@ export default function MonthlyActivityChart({
       },
     },
     scales: {
-      x: { grid: { display: false }, ticks: { color: "#94A3B8" } },
+      x: {
+        grid: { display: false },
+        ticks: { color: "#94A3B8" },
+      },
       y: {
         grid: { color: "rgba(255,255,255,0.05)" },
         ticks: {
           color: "#94A3B8",
-          callback: (v: any) => "$" + Number(v).toLocaleString(),
+          callback: (value) => "$" + Number(value).toLocaleString(),
         },
       },
     },
