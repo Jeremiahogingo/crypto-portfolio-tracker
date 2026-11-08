@@ -1,5 +1,6 @@
 //src/components/ui/Avatar.tsx
-import React from "react";
+
+import Image from "next/image";
 
 interface AvatarProps {
   src?: string;
@@ -15,6 +16,12 @@ const sizeClasses = {
   lg: "w-10 h-10 text-base",
 };
 
+const sizePixels = {
+  sm: 24,
+  md: 32,
+  lg: 40,
+};
+
 export default function Avatar({
   src,
   alt = "",
@@ -24,9 +31,12 @@ export default function Avatar({
 }: AvatarProps) {
   if (src) {
     return (
-      <img
+      <Image
         src={src}
         alt={alt}
+        width={sizePixels[size]}
+        height={sizePixels[size]}
+        unoptimized
         className={`rounded-full object-cover ${sizeClasses[size]} ${className}`}
       />
     );
