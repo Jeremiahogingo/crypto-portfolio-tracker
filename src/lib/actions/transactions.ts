@@ -2,23 +2,13 @@
 //
 // Server Actions for recording and removing transactions.
 //
-// ─── Contract with the ledger ────────────────────────────────────────────
-// Every mutation is wrapped in a DB transaction:
-//   1. Insert/delete the ledger row.
-//   2. Recompute the holding from the ledger.
-// Both steps succeed or neither does. A partial write would leave holdings
-// and ledger out of sync, which is worse than a failed action.
+// Every mutation is wrapped in a database transaction:
+//   1. Insert or delete the ledger row.
+//   2. Recompute the associated holding.
+// Both steps succeed or neither does.
 //
-// ─── Validation ──────────────────────────────────────────────────────────
-// Zod validates the shape; recompute validates the math (an oversell is
-// rejected by recompute throwing, which we translate to a user-facing
-// error). This split keeps the schema simple and the business rule in
-// exactly one place.
-//
-// ─── executedAt ──────────────────────────────────────────────────────────
-// Defaults to now. The form allows backdating — users importing history
-// need this. We cap at "not in the future" because a future-dated buy
-// would corrupt P&L (you can't have owned a coin before you bought it).
+// Zod validates incoming form data. recomputeHolding enforces the business
+// rule that a user cannot sell more cryptocurrency than they currently hold.
 
 "use server";
 
@@ -35,21 +25,21 @@ export type TransactionActionResult =
   | { success: true }
   | { error: string };
 
-// ─── Schemas ─────────────────────────────────────────────────────────────
+// --------------------------------------------------
+// Validation schemas
+// --------------------------------------------------
 
 const AddTransactionSchema = z.object({
   coinId: z.string().min(1, "Coin is required"),
   symbol: z.string().min(1).max(16),
   type: z.enum(["buy", "sell"]),
   quantity: z.coerce.number().positive("Quantity must be greater than zero"),
-  pricePerUnit: z.coerce
-    .number()
-    .nonnegative("Price cannot be negative"),
+  pricePerUnit: z.coerce.number().nonnegative("Price cannot be negative"),
   executedAt: z
     .string()
     .optional()
     .refine(
-      (v) => !v || new Date(v).getTime() <= Date.now() + 60_000,
+      (value) => !value || new Date(value).getTime() <= Date.now() + 60_000,
       "Transaction date cannot be in the future"
     ),
   notes: z.string().max(500).optional(),
@@ -59,16 +49,24 @@ const DeleteTransactionSchema = z.object({
   transactionId: z.string().uuid(),
 });
 
-// ─── addTransaction ──────────────────────────────────────────────────────
+// --------------------------------------------------
+// Add transaction
+// --------------------------------------------------
 
 export async function addTransaction(
   formData: FormData
 ): Promise<TransactionActionResult> {
   const session = await getCurrentUser();
-  if (!session) return { error: "Not authenticated" };
+
+  if (!session) {
+    return { error: "Not authenticated" };
+  }
 
   const portfolio = await getDefaultPortfolio();
-  if (!portfolio) return { error: "No portfolio found" };
+
+  if (!portfolio) {
+    return { error: "No portfolio found" };
+  }
 
   const parsed = AddTransactionSchema.safeParse({
     coinId: formData.get("coinId"),
@@ -81,11 +79,21 @@ export async function addTransaction(
   });
 
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+    return {
+      error: parsed.error.issues[0]?.message ?? "Invalid input",
+    };
   }
 
-  const { coinId, symbol, type, quantity, pricePerUnit, executedAt, notes } =
-    parsed.data;
+  const {
+    coinId,
+    symbol,
+    type,
+    quantity,
+    pricePerUnit,
+    executedAt,
+    notes,
+  } = parsed.data;
+
   const totalValue = quantity * pricePerUnit;
   const executedDate = executedAt ? new Date(executedAt) : new Date();
 
@@ -104,41 +112,59 @@ export async function addTransaction(
         notes,
       });
 
-      // Recompute handles the oversell check by throwing. That throw
-      // rolls back the insert above — no orphan ledger row.
-      await recomputeHolding(tx, portfolio.id, session.auth.id, coinId, symbol);
+      // Recompute enforces the oversell rule. If it throws, the transaction
+      // insert is rolled back and the ledger remains consistent.
+      await recomputeHolding(
+        tx,
+        portfolio.id,
+        session.auth.id,
+        coinId,
+        symbol
+      );
     });
   } catch (err) {
-    const message = (err as Error).message;
-    // Surface oversell errors verbatim — they're specific and actionable.
+    const message = err instanceof Error ? err.message : "";
+
     if (message.includes("Cannot sell")) {
       return { error: message };
     }
+
     console.error("[addTransaction] failed", err);
-    return { error: "Failed to record transaction. Please try again." };
+
+    return {
+      error: "Failed to record transaction. Please try again.",
+    };
   }
 
   revalidatePath("/", "layout");
+
   return { success: true };
 }
 
-// ─── deleteTransaction ───────────────────────────────────────────────────
+// --------------------------------------------------
+// Delete transaction
+// --------------------------------------------------
 
 export async function deleteTransaction(
   formData: FormData
 ): Promise<TransactionActionResult> {
   const session = await getCurrentUser();
-  if (!session) return { error: "Not authenticated" };
+
+  if (!session) {
+    return { error: "Not authenticated" };
+  }
 
   const parsed = DeleteTransactionSchema.safeParse({
     transactionId: formData.get("transactionId"),
   });
-  if (!parsed.success) return { error: "Invalid transaction id" };
+
+  if (!parsed.success) {
+    return { error: "Invalid transaction id" };
+  }
 
   try {
     await db.transaction(async (tx) => {
-      // Fetch first — recompute needs coinId/symbol, and we must verify
-      // ownership before deleting.
+      // Retrieve the transaction only if it belongs to the authenticated user.
       const [target] = await tx
         .select()
         .from(transactions)
@@ -154,14 +180,24 @@ export async function deleteTransaction(
         throw new Error("Transaction not found or not owned by you");
       }
 
-      await tx
+      // Repeat ownership and portfolio conditions in the DELETE itself.
+      const [deletedTransaction] = await tx
         .delete(transactions)
-        .where(eq(transactions.id, target.id));
+        .where(
+          and(
+            eq(transactions.id, target.id),
+            eq(transactions.userId, session.auth.id),
+            eq(transactions.portfolioId, target.portfolioId)
+          )
+        )
+        .returning({ id: transactions.id });
 
-      // If deleting this row leaves a remaining ledger with an oversell
-      // (e.g. you deleted the buy that funded a later sell), recompute
-      // throws and the whole delete rolls back. That's correct — the
-      // ledger would be inconsistent otherwise.
+      if (!deletedTransaction) {
+        throw new Error("Transaction not found or not owned by you");
+      }
+
+      // If deletion invalidates a later sell, recomputation throws and
+      // rolls back the entire transaction, including this deletion.
       await recomputeHolding(
         tx,
         target.portfolioId,
@@ -171,20 +207,27 @@ export async function deleteTransaction(
       );
     });
   } catch (err) {
-    const message = (err as Error).message;
+    const message = err instanceof Error ? err.message : "";
+
     if (message.includes("Cannot sell")) {
       return {
         error:
           "Deleting this transaction would make a later sell invalid. Delete the sell first.",
       };
     }
+
     if (message.includes("not found")) {
       return { error: "Transaction not found" };
     }
+
     console.error("[deleteTransaction] failed", err);
-    return { error: "Failed to delete transaction. Please try again." };
+
+    return {
+      error: "Failed to delete transaction. Please try again.",
+    };
   }
 
   revalidatePath("/", "layout");
+
   return { success: true };
 }

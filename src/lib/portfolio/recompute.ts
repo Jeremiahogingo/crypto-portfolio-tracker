@@ -1,36 +1,21 @@
 // src/lib/portfolio/recompute.ts
 //
-// Rebuilds a holding row from the transaction ledger.
+// Rebuild a holding from its transaction ledger.
 //
-// ─── Why this exists ─────────────────────────────────────────────────────
-// There are two ways to change a position: correction (edit the holding
-// directly — 2.4a) and trade (add a transaction — this step). Trades MUST
-// flow through the ledger, because holding.cost_basis is a derived value:
-// the weighted-average price of every buy minus the proportional cost
-// removed by every sell.
+// The transaction ledger is the source of truth. This function reconstructs
+// the current position instead of incrementally modifying potentially stale
+// holding values.
 //
-// Rather than maintaining that math incrementally (fragile: one bug in one
-// action and the whole position is wrong), every mutation recomputes the
-// holding from scratch. It's O(n) over the coin's transactions, which is
-// small — even 10,000 trades for a single coin is a trivial query.
+// BUY:
+//   quantity += amount
+//   totalCost += amount * price
 //
-// ─── Algorithm ───────────────────────────────────────────────────────────
-// Walk the ledger in chronological order. For each transaction:
-//   • BUY:  qty += amount;  totalCost += amount × price
-//   • SELL: qty -= amount;  totalCost -= amount × (totalCost / qty_before)
+// SELL:
+//   quantity -= amount
+//   totalCost -= amount * averageCostBeforeSale
 //
-// The sell formula removes cost proportionally to the average cost basis
-// at the time of the sell. This is the "average cost" accounting method —
-// simple, defensible, and what most exchanges default to. FIFO would be
-// more accurate for some tax regimes, but that's Phase 5 work.
-//
-// ─── Failure modes ───────────────────────────────────────────────────────
-// • Sell exceeds held → throws. The caller (addTransaction) catches and
-//   returns a user-facing error. This is why the modal can't allow an
-//   oversell — the DB would accept it, but the math wouldn't.
-// • Final qty ≤ 0 → holding is deleted. The ledger is preserved (it's
-//   history), but the UI shows zero rows for that coin. Re-buying later
-//   creates a fresh holding from the same ledger.
+// This uses average-cost accounting. FIFO accounting can be introduced
+// separately if required for tax reporting.
 
 import { and, eq, asc } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
@@ -38,19 +23,22 @@ import * as schema from "@/db/schema";
 import { holdings, transactions } from "@/db/schema";
 
 /**
- * Transaction type — narrowed so the caller gets a typed tx object that's
- * guaranteed to be inside db.transaction(). Not the full db type because
- * some operations (like .transaction) are forbidden mid-transaction anyway.
+ * Transaction-scoped database type.
+ *
+ * Callers must execute recomputation inside the same database transaction
+ * that inserts or deletes the corresponding ledger entry.
  */
 type Tx = PostgresJsDatabase<typeof schema>;
 
 /**
- * Recompute the holding for (portfolioId, coinId) from its transaction
- * ledger. Idempotent — calling it twice produces the same result.
+ * Recompute a holding for one user, portfolio and coin.
  *
- * Must be called inside a db.transaction() that also performs the
- * transaction insert/delete. Otherwise a concurrent action could race
- * between the ledger change and the recompute.
+ * Ownership is explicitly checked on ledger reads and holding reads.
+ * Holding updates and deletions repeat these predicates in their final
+ * mutation statements.
+ *
+ * Any unexpected mutation result throws so the caller can roll back
+ * the enclosing transaction.
  */
 export async function recomputeHolding(
   tx: Tx,
@@ -83,23 +71,23 @@ export async function recomputeHolding(
       totalCost += amount * price;
     } else if (entry.type === "sell") {
       if (amount > qty + 1e-9) {
-        // 1e-9 tolerance for floating-point dust — quantity is stored as
-        // numeric, so exact equality is possible but hard to reason about.
+        // Small tolerance accounts for floating-point arithmetic dust.
         throw new Error(
           `Cannot sell ${amount} ${symbol} — only ${qty} held at that point in the ledger`
         );
       }
-      const avgCost = qty > 0 ? totalCost / qty : 0;
+
+      const averageCost = qty > 0 ? totalCost / qty : 0;
+
       qty -= amount;
-      totalCost -= amount * avgCost;
+      totalCost -= amount * averageCost;
     }
-    // Unknown type is silently ignored — only "buy"/"sell" exist in the
-    // check constraint, but defensive coding prevents a corrupted row
-    // from crashing the entire recompute.
+
+    // Unknown transaction types are ignored defensively. Valid transaction
+    // types are constrained at the application and database boundaries.
   }
 
-  // Read existing holding (0 or 1 rows — no unique constraint enforces
-  // this, but the 2.4a actions never create duplicates for the same coin).
+  // Retrieve the existing position using all ownership identifiers.
   const [existing] = await tx
     .select()
     .from(holdings)
@@ -113,25 +101,55 @@ export async function recomputeHolding(
     .limit(1);
 
   if (qty <= 0) {
-    // Position fully closed — remove the holding row but leave the ledger.
+    // A fully closed position should have no current holding row.
+    // The transaction ledger remains intact as historical evidence.
     if (existing) {
-      await tx.delete(holdings).where(eq(holdings.id, existing.id));
+      const [deletedHolding] = await tx
+        .delete(holdings)
+        .where(
+          and(
+            eq(holdings.id, existing.id),
+            eq(holdings.portfolioId, portfolioId),
+            eq(holdings.coinId, coinId),
+            eq(holdings.userId, userId)
+          )
+        )
+        .returning({ id: holdings.id });
+
+      if (!deletedHolding) {
+        throw new Error("Holding changed during recomputation");
+      }
     }
+
     return;
   }
 
   const costBasis = totalCost / qty;
 
   if (existing) {
-    await tx
+    const [updatedHolding] = await tx
       .update(holdings)
       .set({
         quantity: qty.toString(),
         costBasis: costBasis.toString(),
         updatedAt: new Date(),
       })
-      .where(eq(holdings.id, existing.id));
+      .where(
+        and(
+          eq(holdings.id, existing.id),
+          eq(holdings.portfolioId, portfolioId),
+          eq(holdings.coinId, coinId),
+          eq(holdings.userId, userId)
+        )
+      )
+      .returning({ id: holdings.id });
+
+    if (!updatedHolding) {
+      throw new Error("Holding changed during recomputation");
+    }
   } else {
+    // The authenticated user and portfolio identifiers are passed by the
+    // calling Server Action, never accepted directly from browser input.
     await tx.insert(holdings).values({
       portfolioId,
       userId,
