@@ -8,6 +8,27 @@
       "when": 1793038353141,
       "tag": "0000_overjoyed_kang",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794138170885,
+      "tag": "0001_portfolio-ownership-integrity",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794213306053,
+      "tag": "0002_security-hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794218703641,
+      "tag": "0003_rls-authenticated-policy-targets",
+      "breakpoints": true
     }
   ]
 }
