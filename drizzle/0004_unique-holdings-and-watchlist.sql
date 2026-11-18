@@ -1,0 +1,2 @@
+ALTER TABLE "holdings" ADD CONSTRAINT "holdings_portfolio_coin_unique" UNIQUE("portfolio_id","coin_id");--> statement-breakpoint
+ALTER TABLE "watchlist_items" ADD CONSTRAINT "watchlist_user_coin_unique" UNIQUE("user_id","coin_id");

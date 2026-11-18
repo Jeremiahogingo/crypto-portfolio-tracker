@@ -158,6 +158,13 @@ export const holdings = pgTable(
   (table) => [
     index("holdings_portfolio_id_idx").on(table.portfolioId),
     index("holdings_user_id_idx").on(table.userId),
+// The ledger can contain multiple transactions for a coin, but its
+    // current position must have exactly one row per portfolio and coin.
+    // PostgreSQL enforces this even when concurrent requests race to insert.
+    unique("holdings_portfolio_coin_unique").on(
+      table.portfolioId,
+      table.coinId
+    ),
 
     // A holding must reference a portfolio owned by the same user.
     // This remains enforced even when application-level authorization
@@ -298,6 +305,12 @@ export const watchlistItems = pgTable(
   },
   (table) => [
     index("watchlist_user_id_idx").on(table.userId),
+// A user may have each coin only once in their watchlist.
+    // This database constraint makes concurrent additions safe.
+    unique("watchlist_user_coin_unique").on(
+      table.userId,
+      table.coinId
+    ),
 
     pgPolicy("watchlist_select_own", {
       for: "select",
