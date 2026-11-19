@@ -62,6 +62,9 @@
   "overrides": {
     "@typescript-eslint/typescript-estree@8.72.1": {
       "minimatch": "11.0.1"
+    },
+    "@esbuild-kit/core-utils": {
+      "esbuild": "0.25.12"
     }
   }
 }
