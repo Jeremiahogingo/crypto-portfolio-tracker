@@ -9,6 +9,8 @@ import {
   boolean,
   pgPolicy,
   index,
+  serial,
+  check,
   unique,
   foreignKey,
 } from "drizzle-orm/pg-core";
@@ -206,10 +208,15 @@ export const holdings = pgTable(
 // Transactions
 // --------------------------------------------------
 
+export type TransactionType = "buy" | "sell" | "adjustment";
+
 export const transactions = pgTable(
   "transactions",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+
+    // Database-generated insertion order, used to break executedAt ties.
+    ledgerSequence: serial("ledger_sequence").notNull(),
 
     // Ownership is enforced through the composite foreign key below.
     portfolioId: uuid("portfolio_id").notNull(),
@@ -221,7 +228,7 @@ export const transactions = pgTable(
     coinId: text("coin_id").notNull(),
     symbol: text("symbol").notNull(),
 
-    type: text("type").notNull(), // "buy" | "sell"
+    type: text("type").$type<TransactionType>().notNull(),
 
     quantity: numeric("quantity", {
       precision: 28,
@@ -233,9 +240,10 @@ export const transactions = pgTable(
       scale: 8,
     }).notNull(),
 
+    // A scale-8 quantity multiplied by a scale-8 price can require scale 16.
     totalValue: numeric("total_value", {
-      precision: 20,
-      scale: 8,
+      precision: 48,
+      scale: 16,
     }).notNull(),
 
     executedAt: timestamp("executed_at", { withTimezone: true })
@@ -248,6 +256,36 @@ export const transactions = pgTable(
     index("transactions_portfolio_id_idx").on(table.portfolioId),
     index("transactions_user_id_idx").on(table.userId),
     index("transactions_executed_at_idx").on(table.executedAt),
+
+    // Supports chronological per-coin ledger reconstruction.
+    index("transactions_ledger_replay_idx").on(
+      table.portfolioId,
+      table.coinId,
+      table.userId,
+      table.executedAt,
+      table.ledgerSequence
+    ),
+
+    // Keeps the database-generated insertion sequence unique.
+    unique("transactions_ledger_sequence_unique").on(
+      table.ledgerSequence
+    ),
+
+    check(
+      "transactions_type_check",
+      sql`${table.type} IN ('buy', 'sell', 'adjustment')`
+    ),
+
+    // BUY and SELL require positive quantities. An adjustment may be zero.
+    check(
+      "transactions_quantity_check",
+      sql`${table.quantity} > 0 OR (${table.type} = 'adjustment' AND ${table.quantity} = 0)`
+    ),
+
+    check(
+      "transactions_nonnegative_values_check",
+      sql`${table.pricePerUnit} >= 0 AND ${table.totalValue} >= 0`
+    ),
 
     // A transaction must reference a portfolio owned by the same user.
     foreignKey({

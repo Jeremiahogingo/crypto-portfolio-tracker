@@ -1,61 +1,131 @@
 // src/lib/actions/holdings.ts
 //
-// Server Actions for holding CRUD.
+// Server Actions for holding mutations.
 //
-// Every action:
-//   1. Authenticates via getCurrentUser.
-//   2. Validates untrusted FormData with Zod.
-//   3. Scopes database operations to the authenticated user.
-//   4. Uses transactions when multiple tables must remain consistent.
-//   5. Revalidates affected application routes.
+// Security:
+// - Every operation requires a verified Supabase session.
+// - User identity is derived exclusively from that session.
+// - Every holding mutation includes explicit ownership predicates.
+// - The Drizzle connection bypasses RLS, so these predicates are essential.
 //
-// addHolding creates two rows atomically: a holding and its initial buy
-// transaction. This prevents incomplete ledger records.
+// Accounting:
+// - The transaction ledger is the source of truth.
+// - Quick Add is recorded as a BUY event.
+// - Editing a holding appends an ADJUSTMENT event.
+// - Holding rows are projections rebuilt from the ledger.
 //
-// updateHolding is a correction mechanism. It changes the current position
-// without modifying the transaction ledger.
+// Concurrency:
+// - Portfolio mutations acquire a row-level lock before ledger writes.
+// - Ledger changes and holding recomputation run in one database transaction.
 
 "use server";
 
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
+
 import { db } from "@/lib/db";
-import { holdings, transactions } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/get-current-user";
 import { getDefaultPortfolio } from "@/lib/portfolio/queries";
+import {
+  lockPortfolioForMutation,
+  recomputeHolding,
+} from "@/lib/portfolio/recompute";
+import {
+  DecimalInputError,
+  MAX_QUANTITY,
+  MAX_UNIT_PRICE,
+  MAX_TOTAL_VALUE,
+  TOTAL_VALUE_SCALE,
+  calculateTransactionTotal,
+  parseDecimalInput,
+  toDatabaseNumeric,
+} from "@/lib/portfolio/decimal";
+
+import { holdings, transactions } from "@/db/schema";
 
 export type HoldingsActionResult =
   | { success: true }
   | { error: string };
 
 // --------------------------------------------------
-// Validation schemas
+// Input validation
 // --------------------------------------------------
 
 const AddHoldingSchema = z.object({
-  coinId: z.string().min(1, "Coin is required"),
-  symbol: z.string().min(1).max(16),
-  quantity: z.coerce
-    .number()
-    .positive("Quantity must be greater than zero")
-    // Match the database numeric column's supported range.
-    .max(1e20, "Quantity is too large"),
-  costBasis: z.coerce
-    .number()
-    .nonnegative("Cost basis cannot be negative")
-    .max(1e15, "Cost basis is too large"),
+  coinId: z.string().trim().min(1).max(100),
+  symbol: z.string().trim().min(1).max(16),
+  quantity: z.string().trim().min(1, "Quantity is required."),
+  costBasis: z.string().trim().min(1, "Cost basis is required."),
 });
 
 const UpdateHoldingSchema = z.object({
   holdingId: z.string().uuid(),
-  quantity: z.coerce.number().positive().max(1e20),
-  costBasis: z.coerce.number().nonnegative().max(1e15),
+  quantity: z.string().trim().min(1, "Quantity is required."),
+  costBasis: z.string().trim().min(1, "Cost basis is required."),
 });
 
 const DeleteHoldingSchema = z.object({
   holdingId: z.string().uuid(),
 });
+
+/**
+ * Parse a quantity and unit cost without converting through JavaScript
+ * Number. Both values are validated against the actual database precision.
+ */
+function parsePositionAmounts(
+  quantityInput: string,
+  costBasisInput: string,
+  allowZeroQuantity: boolean
+) {
+  const quantity = parseDecimalInput(
+    quantityInput,
+    "Quantity",
+    {
+      allowZero: allowZeroQuantity,
+      maximum: MAX_QUANTITY,
+    }
+  );
+
+  const costBasis = parseDecimalInput(
+    costBasisInput,
+    "Cost basis",
+    {
+      allowZero: true,
+      maximum: MAX_UNIT_PRICE,
+    }
+  );
+
+  const totalValue = calculateTransactionTotal(
+    quantity,
+    costBasis
+  );
+
+  return {
+    quantity: toDatabaseNumeric(
+      quantity,
+      "Quantity",
+      MAX_QUANTITY
+    ),
+    costBasis: toDatabaseNumeric(
+      costBasis,
+      "Cost basis",
+      MAX_UNIT_PRICE
+    ),
+    totalValue: toDatabaseNumeric(
+      totalValue,
+      "Total value",
+      MAX_TOTAL_VALUE,
+      TOTAL_VALUE_SCALE
+    ),
+  };
+}
+
+function getValidationError(error: unknown): string | null {
+  return error instanceof DecimalInputError
+    ? error.message
+    : null;
+}
 
 // --------------------------------------------------
 // Add holding
@@ -68,12 +138,6 @@ export async function addHolding(
 
   if (!session) {
     return { error: "Not authenticated" };
-  }
-
-  const portfolio = await getDefaultPortfolio();
-
-  if (!portfolio) {
-    return { error: "No portfolio found" };
   }
 
   const parsed = AddHoldingSchema.safeParse({
@@ -89,31 +153,71 @@ export async function addHolding(
     };
   }
 
-  const { coinId, symbol, quantity, costBasis } = parsed.data;
-  const totalValue = quantity * costBasis;
+  let amounts: ReturnType<typeof parsePositionAmounts>;
+
+  try {
+    amounts = parsePositionAmounts(
+      parsed.data.quantity,
+      parsed.data.costBasis,
+      false
+    );
+  } catch (error) {
+    return {
+      error:
+        getValidationError(error) ??
+        "The supplied holding values are invalid.",
+    };
+  }
+
+  let portfolio: Awaited<ReturnType<typeof getDefaultPortfolio>>;
+
+  try {
+    portfolio = await getDefaultPortfolio();
+  } catch (err) {
+    console.error("[addHolding] portfolio lookup failed", err);
+
+    return {
+      error: "Failed to load portfolio. Please try again.",
+    };
+  }
+
+  if (!portfolio) {
+    return { error: "No portfolio found" };
+  }
+
+  const { coinId, symbol } = parsed.data;
+  const userId = session.auth.id;
 
   try {
     await db.transaction(async (tx) => {
-      await tx.insert(holdings).values({
-        portfolioId: portfolio.id,
-        userId: session.auth.id,
-        coinId,
-        symbol,
-        quantity: quantity.toString(),
-        costBasis: costBasis.toString(),
-      });
+      // Serialize every ledger mutation targeting this portfolio.
+      await lockPortfolioForMutation(
+        tx,
+        portfolio.id,
+        userId
+      );
 
+      // Quick Add is represented as an opening BUY event. The current
+      // holding projection is created by recomputing the authoritative ledger.
       await tx.insert(transactions).values({
         portfolioId: portfolio.id,
-        userId: session.auth.id,
+        userId,
         coinId,
         symbol,
         type: "buy",
-        quantity: quantity.toString(),
-        pricePerUnit: costBasis.toString(),
-        totalValue: totalValue.toString(),
+        quantity: amounts.quantity,
+        pricePerUnit: amounts.costBasis,
+        totalValue: amounts.totalValue,
         notes: "Initial position (created via Quick Add)",
       });
+
+      await recomputeHolding(
+        tx,
+        portfolio.id,
+        userId,
+        coinId,
+        symbol
+      );
     });
   } catch (err) {
     console.error("[addHolding] failed", err);
@@ -132,6 +236,16 @@ export async function addHolding(
 // Update holding
 // --------------------------------------------------
 
+/**
+ * Correct a current position without destroying its original trade history.
+ *
+ * The correction is recorded as an absolute ADJUSTMENT event. The ledger
+ * replay engine then reconstructs the current holding using all prior events
+ * followed by this correction and any later trades.
+ *
+ * A quantity of zero deliberately closes the current position while
+ * retaining every historical ledger event.
+ */
 export async function updateHolding(
   formData: FormData
 ): Promise<HoldingsActionResult> {
@@ -153,36 +267,109 @@ export async function updateHolding(
     };
   }
 
-  const { holdingId, quantity, costBasis } = parsed.data;
+  let amounts: ReturnType<typeof parsePositionAmounts>;
 
   try {
-    // Ownership is enforced directly in the mutation. A forged holding ID
-    // cannot update another user's position.
-    const result = await db
-      .update(holdings)
-      .set({
-        quantity: quantity.toString(),
-        costBasis: costBasis.toString(),
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(holdings.id, holdingId),
-          eq(holdings.userId, session.auth.id)
-        )
-      )
-      .returning({ id: holdings.id });
+    // Editing permits zero quantity so a correction can close a position.
+    amounts = parsePositionAmounts(
+      parsed.data.quantity,
+      parsed.data.costBasis,
+      true
+    );
+  } catch (error) {
+    return {
+      error:
+        getValidationError(error) ??
+        "The supplied correction values are invalid.",
+    };
+  }
 
-    if (result.length === 0) {
-      return {
-        error: "Holding not found or not owned by you",
-      };
-    }
+  const { holdingId } = parsed.data;
+  const userId = session.auth.id;
+
+  try {
+    await db.transaction(async (tx) => {
+      // Identify the owning portfolio without locking a holding row first.
+      // Every mutation acquires locks in portfolio-first order.
+      const [candidate] = await tx
+        .select({
+          portfolioId: holdings.portfolioId,
+        })
+        .from(holdings)
+        .where(
+          and(
+            eq(holdings.id, holdingId),
+            eq(holdings.userId, userId)
+          )
+        )
+        .limit(1);
+
+      if (!candidate) {
+        throw new Error("Holding not found or not owned by you");
+      }
+
+      await lockPortfolioForMutation(
+        tx,
+        candidate.portfolioId,
+        userId
+      );
+
+      // Re-read the target after waiting for the portfolio lock. A concurrent
+      // operation could have changed or deleted the holding in the meantime.
+      const [target] = await tx
+        .select({
+          coinId: holdings.coinId,
+          symbol: holdings.symbol,
+        })
+        .from(holdings)
+        .where(
+          and(
+            eq(holdings.id, holdingId),
+            eq(holdings.userId, userId),
+            eq(holdings.portfolioId, candidate.portfolioId)
+          )
+        )
+        .limit(1);
+
+      if (!target) {
+        throw new Error("Holding not found or not owned by you");
+      }
+
+      // Never directly overwrite the holding projection. Append an immutable
+      // correction event and rebuild the projection from the complete ledger.
+      await tx.insert(transactions).values({
+        portfolioId: candidate.portfolioId,
+        userId,
+        coinId: target.coinId,
+        symbol: target.symbol,
+        type: "adjustment",
+        quantity: amounts.quantity,
+        pricePerUnit: amounts.costBasis,
+        totalValue: amounts.totalValue,
+        executedAt: new Date(),
+        notes: "Manual position correction",
+      });
+
+      await recomputeHolding(
+        tx,
+        candidate.portfolioId,
+        userId,
+        target.coinId,
+        target.symbol
+      );
+    });
   } catch (err) {
+    if (
+      err instanceof Error &&
+      err.message === "Holding not found or not owned by you"
+    ) {
+      return { error: err.message };
+    }
+
     console.error("[updateHolding] failed", err);
 
     return {
-      error: "Failed to update holding. Please try again.",
+      error: "Failed to correct holding. Please try again.",
     };
   }
 
@@ -213,64 +400,93 @@ export async function deleteHolding(
   }
 
   const { holdingId } = parsed.data;
+  const userId = session.auth.id;
 
   try {
-    // Find the position using both its ID and authenticated owner.
-    // The result provides the portfolio and coin identifiers required
-    // to remove the corresponding transaction history.
-    const [target] = await db
-      .select({
-        coinId: holdings.coinId,
-        portfolioId: holdings.portfolioId,
-      })
-      .from(holdings)
-      .where(
-        and(
-          eq(holdings.id, holdingId),
-          eq(holdings.userId, session.auth.id)
-        )
-      )
-      .limit(1);
-
-    if (!target) {
-      return {
-        error: "Holding not found or not owned by you",
-      };
-    }
-
     await db.transaction(async (tx) => {
-      // Repeat ownership conditions in the actual DELETE statement.
-      // The earlier lookup alone should not be the authorization boundary.
+      // The first lookup is deliberately non-locking to preserve the
+      // portfolio-first lock acquisition order.
+      const [candidate] = await tx
+        .select({
+          portfolioId: holdings.portfolioId,
+        })
+        .from(holdings)
+        .where(
+          and(
+            eq(holdings.id, holdingId),
+            eq(holdings.userId, userId)
+          )
+        )
+        .limit(1);
+
+      if (!candidate) {
+        throw new Error("Holding not found or not owned by you");
+      }
+
+      await lockPortfolioForMutation(
+        tx,
+        candidate.portfolioId,
+        userId
+      );
+
+      // Re-read after acquiring the portfolio lock.
+      const [target] = await tx
+        .select({
+          coinId: holdings.coinId,
+          portfolioId: holdings.portfolioId,
+        })
+        .from(holdings)
+        .where(
+          and(
+            eq(holdings.id, holdingId),
+            eq(holdings.userId, userId),
+            eq(holdings.portfolioId, candidate.portfolioId)
+          )
+        )
+        .limit(1);
+
+      if (!target) {
+        throw new Error("Holding not found or not owned by you");
+      }
+
       const [deletedHolding] = await tx
         .delete(holdings)
         .where(
           and(
             eq(holdings.id, holdingId),
-            eq(holdings.userId, session.auth.id),
+            eq(holdings.userId, userId),
             eq(holdings.portfolioId, target.portfolioId)
           )
         )
-        .returning({ id: holdings.id });
+        .returning({
+          id: holdings.id,
+        });
 
-      // A concurrent change must abort the transaction rather than
-      // silently proceeding with deletion of the transaction history.
       if (!deletedHolding) {
         throw new Error("Holding changed or is no longer available");
       }
 
-      // Removing an entire position also removes its ledger history.
-      // Selling is a separate operation and must preserve past transactions.
+      // Explicitly deleting a holding continues to remove its transaction
+      // history. This is distinct from a zero-quantity ADJUSTMENT, which
+      // closes a position while preserving its history.
       await tx
         .delete(transactions)
         .where(
           and(
             eq(transactions.portfolioId, target.portfolioId),
             eq(transactions.coinId, target.coinId),
-            eq(transactions.userId, session.auth.id)
+            eq(transactions.userId, userId)
           )
         );
     });
   } catch (err) {
+    if (
+      err instanceof Error &&
+      err.message === "Holding not found or not owned by you"
+    ) {
+      return { error: err.message };
+    }
+
     console.error("[deleteHolding] failed", err);
 
     return {

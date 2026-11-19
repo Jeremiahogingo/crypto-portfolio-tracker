@@ -36,6 +36,20 @@
       "when": 1795005906365,
       "tag": "0004_unique-holdings-and-watchlist",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795011728431,
+      "tag": "0005_transaction-adjustment-events",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795012764894,
+      "tag": "0006_transaction-total-precision",
+      "breakpoints": true
     }
   ]
 }

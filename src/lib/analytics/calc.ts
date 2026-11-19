@@ -97,7 +97,12 @@ export function computeAnalyticsSummary(
 ): AnalyticsSummary {
   const totalInvested = transactions.reduce((sum, tx) => {
     const value = Number(tx.totalValue);
-    return tx.type === "buy" ? sum + value : sum - value;
+
+    if (tx.type === "buy") return sum + value;
+    if (tx.type === "sell") return sum - value;
+
+    // ADJUSTMENT changes the recorded position, not cash invested.
+    return sum;
   }, 0);
 
   const currentValue = holdings.reduce((s, h) => s + h.currentValue, 0);
@@ -157,8 +162,18 @@ export function computeInvestmentTimeline(
   let cumulative = 0;
 
   for (const tx of sorted) {
+    // Corrections are not deposits or withdrawals and must not alter this
+    // cumulative investment timeline or create adjustment-only months.
+    if (tx.type === "adjustment") continue;
+
     const value = Number(tx.totalValue);
-    cumulative += tx.type === "buy" ? value : -value;
+
+    if (tx.type === "buy") {
+      cumulative += value;
+    } else {
+      cumulative -= value;
+    }
+
     // Last write wins for the month — we want the cumulative at the END of
     // the month, not at the first transaction in it.
     byMonth.set(monthKey(new Date(tx.executedAt)), cumulative);
@@ -190,11 +205,19 @@ export function computeMonthlyActivity(
   const byMonth = new Map<string, { buys: number; sells: number }>();
 
   for (const tx of transactions) {
+    // Do not create empty activity buckets for correction-only months.
+    if (tx.type === "adjustment") continue;
+
     const key = monthKey(new Date(tx.executedAt));
     const bucket = byMonth.get(key) ?? { buys: 0, sells: 0 };
     const value = Number(tx.totalValue);
-    if (tx.type === "buy") bucket.buys += value;
-    else bucket.sells += value;
+
+    if (tx.type === "buy") {
+      bucket.buys += value;
+    } else {
+      bucket.sells += value;
+    }
+
     byMonth.set(key, bucket);
   }
 

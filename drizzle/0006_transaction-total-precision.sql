@@ -1,0 +1,1 @@
+ALTER TABLE "transactions" ALTER COLUMN "total_value" SET DATA TYPE numeric(48, 16);

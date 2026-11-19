@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "tsx --test tests/portfolio-ledger.test.ts tests/analytics-adjustments.test.ts",
+    "test:db": "tsx tests/ledger-database.integration.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
@@ -18,11 +20,12 @@
     "axios": "^1.18.1",
     "chart.js": "^4.5.1",
     "date-fns": "^4.4.0",
+    "decimal.js": "^10.6.0",
     "drizzle-orm": "^0.45.4",
-    "fast-xml-parser": "^5.11.2",
+    "fast-xml-parser": "^5.12.1",
     "framer-motion": "^12.42.2",
     "lucide-react": "^1.24.0",
-    "next": "^16.2.10",
+    "next": "^16.4.6",
     "next-auth": "^4.24.14",
     "next-themes": "^0.4.6",
     "postgres": "^3.4.9",
@@ -47,6 +50,7 @@
     "prettier": "^3.9.5",
     "prettier-plugin-tailwindcss": "^0.8.0",
     "tailwindcss": "^4.3.2",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3"
   },
   "allowScripts": {
@@ -55,9 +59,9 @@
     "esbuild@0.28.2": true,
     "unrs-resolver@1.12.2": true
   },
-"overrides": {
-  "@typescript-eslint/typescript-estree@8.72.1": {
-    "minimatch": "11.0.1"
+  "overrides": {
+    "@typescript-eslint/typescript-estree@8.72.1": {
+      "minimatch": "11.0.1"
     }
   }
 }

@@ -1,53 +1,93 @@
 // src/lib/actions/transactions.ts
 //
-// Server Actions for recording and removing transactions.
+// Server Actions for recording and deleting portfolio transactions.
 //
-// Every mutation is wrapped in a database transaction:
-//   1. Insert or delete the ledger row.
-//   2. Recompute the associated holding.
-// Both steps succeed or neither does.
+// Security:
+// - Every operation requires a verified Supabase session.
+// - User identity always comes from the authenticated session.
+// - Portfolio and transaction ownership are checked in database queries.
+// - The privileged Drizzle connection bypasses RLS, so explicit ownership
+//   predicates are mandatory.
 //
-// Zod validates incoming form data. recomputeHolding enforces the business
-// rule that a user cannot sell more cryptocurrency than they currently hold.
+// Accounting:
+// - BUY and SELL are the only user-entered trade types.
+// - ADJUSTMENT events are created by the holding correction action.
+// - Decimal input is validated without converting through JavaScript Number.
+// - Ledger values are stored at the database's declared eight-decimal scale.
+//
+// Consistency:
+// - Ledger mutations and holding recomputation share one DB transaction.
+// - Every ledger mutation locks its portfolio before changing the ledger.
+// - A failed recomputation rolls back the entire transaction.
 
 "use server";
 
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
+
 import { db } from "@/lib/db";
-import { transactions } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/get-current-user";
 import { getDefaultPortfolio } from "@/lib/portfolio/queries";
-import { recomputeHolding } from "@/lib/portfolio/recompute";
+import {
+  lockPortfolioForMutation,
+  recomputeHolding,
+} from "@/lib/portfolio/recompute";
+import {
+  DecimalInputError,
+  MAX_QUANTITY,
+  MAX_UNIT_PRICE,
+  MAX_TOTAL_VALUE,
+  TOTAL_VALUE_SCALE,
+  calculateTransactionTotal,
+  parseDecimalInput,
+  toDatabaseNumeric,
+} from "@/lib/portfolio/decimal";
+
+import { transactions } from "@/db/schema";
 
 export type TransactionActionResult =
   | { success: true }
   | { error: string };
 
 // --------------------------------------------------
-// Validation schemas
+// Input validation
 // --------------------------------------------------
 
 const AddTransactionSchema = z.object({
-  coinId: z.string().min(1, "Coin is required"),
-  symbol: z.string().min(1).max(16),
+  coinId: z.string().trim().min(1).max(100),
+  symbol: z.string().trim().min(1).max(16),
   type: z.enum(["buy", "sell"]),
-  quantity: z.coerce.number().positive("Quantity must be greater than zero"),
-  pricePerUnit: z.coerce.number().nonnegative("Price cannot be negative"),
+  quantity: z.string().trim().min(1, "Quantity is required."),
+  pricePerUnit: z.string().trim().min(1, "Price is required."),
   executedAt: z
     .string()
     .optional()
     .refine(
-      (value) => !value || new Date(value).getTime() <= Date.now() + 60_000,
-      "Transaction date cannot be in the future"
+      (value) => {
+        if (!value) return true;
+
+        const timestamp = new Date(value).getTime();
+
+        return (
+          Number.isFinite(timestamp) &&
+          timestamp <= Date.now() + 60_000
+        );
+      },
+      "Transaction date must be valid and cannot be in the future"
     ),
-  notes: z.string().max(500).optional(),
+  notes: z.string().trim().max(500).optional(),
 });
 
 const DeleteTransactionSchema = z.object({
   transactionId: z.string().uuid(),
 });
+
+function getValidationError(error: unknown): string | null {
+  return error instanceof DecimalInputError
+    ? error.message
+    : null;
+}
 
 // --------------------------------------------------
 // Add transaction
@@ -62,11 +102,8 @@ export async function addTransaction(
     return { error: "Not authenticated" };
   }
 
-  const portfolio = await getDefaultPortfolio();
-
-  if (!portfolio) {
-    return { error: "No portfolio found" };
-  }
+  const executedAtValue = formData.get("executedAt");
+  const notesValue = formData.get("notes");
 
   const parsed = AddTransactionSchema.safeParse({
     coinId: formData.get("coinId"),
@@ -74,8 +111,14 @@ export async function addTransaction(
     type: formData.get("type"),
     quantity: formData.get("quantity"),
     pricePerUnit: formData.get("pricePerUnit"),
-    executedAt: formData.get("executedAt") || undefined,
-    notes: formData.get("notes") || undefined,
+    executedAt:
+      typeof executedAtValue === "string" && executedAtValue.length > 0
+        ? executedAtValue
+        : undefined,
+    notes:
+      typeof notesValue === "string" && notesValue.length > 0
+        ? notesValue
+        : undefined,
   });
 
   if (!parsed.success) {
@@ -88,36 +131,121 @@ export async function addTransaction(
     coinId,
     symbol,
     type,
-    quantity,
-    pricePerUnit,
+    quantity: quantityInput,
+    pricePerUnit: priceInput,
     executedAt,
     notes,
   } = parsed.data;
 
-  const totalValue = quantity * pricePerUnit;
-  const executedDate = executedAt ? new Date(executedAt) : new Date();
+  // Parse decimal strings directly. Never route financial input through
+  // JavaScript Number, which cannot represent arbitrary decimal fractions.
+  let quantity: string;
+  let pricePerUnit: string;
+  let totalValue: string;
+
+  try {
+    const parsedQuantity = parseDecimalInput(
+      quantityInput,
+      "Quantity",
+      {
+        allowZero: false,
+        maximum: MAX_QUANTITY,
+      }
+    );
+
+    const parsedPrice = parseDecimalInput(
+      priceInput,
+      "Price",
+      {
+        allowZero: true,
+        maximum: MAX_UNIT_PRICE,
+      }
+    );
+
+    const calculatedTotal = calculateTransactionTotal(
+      parsedQuantity,
+      parsedPrice
+    );
+
+    quantity = toDatabaseNumeric(
+      parsedQuantity,
+      "Quantity",
+      MAX_QUANTITY
+    );
+
+    pricePerUnit = toDatabaseNumeric(
+      parsedPrice,
+      "Price",
+      MAX_UNIT_PRICE
+    );
+
+    totalValue = toDatabaseNumeric(
+      calculatedTotal,
+      "Transaction total",
+      MAX_TOTAL_VALUE,
+      TOTAL_VALUE_SCALE
+    );
+  } catch (error) {
+    return {
+      error:
+        getValidationError(error) ??
+        "The supplied transaction values are invalid.",
+    };
+  }
+
+  const userId = session.auth.id;
+
+  // Portfolio lookup is scoped to the authenticated user. A browser-
+  // supplied portfolio ID is never accepted as an ownership decision.
+  let portfolio: Awaited<ReturnType<typeof getDefaultPortfolio>>;
+
+  try {
+    portfolio = await getDefaultPortfolio();
+  } catch (err) {
+    console.error("[addTransaction] portfolio lookup failed", err);
+
+    return {
+      error: "Failed to load portfolio. Please try again.",
+    };
+  }
+
+  if (!portfolio) {
+    return { error: "No portfolio found" };
+  }
+
+  const executedDate = executedAt
+    ? new Date(executedAt)
+    : new Date();
 
   try {
     await db.transaction(async (tx) => {
+      // Serialize this mutation against every other ledger mutation
+      // targeting the same portfolio.
+      await lockPortfolioForMutation(
+        tx,
+        portfolio.id,
+        userId
+      );
+
       await tx.insert(transactions).values({
         portfolioId: portfolio.id,
-        userId: session.auth.id,
+        userId,
         coinId,
         symbol,
         type,
-        quantity: quantity.toString(),
-        pricePerUnit: pricePerUnit.toString(),
-        totalValue: totalValue.toString(),
+        quantity,
+        pricePerUnit,
+        totalValue,
         executedAt: executedDate,
         notes,
       });
 
-      // Recompute enforces the oversell rule. If it throws, the transaction
-      // insert is rolled back and the ledger remains consistent.
+      // Replay uses executedAt and ledgerSequence for deterministic order.
+      // An invalid historical sale aborts and rolls back this insertion.
       await recomputeHolding(
         tx,
         portfolio.id,
-        session.auth.id,
+        userId,
         coinId,
         symbol
       );
@@ -162,16 +290,46 @@ export async function deleteTransaction(
     return { error: "Invalid transaction id" };
   }
 
+  const transactionId = parsed.data.transactionId;
+  const userId = session.auth.id;
+
   try {
     await db.transaction(async (tx) => {
-      // Retrieve the transaction only if it belongs to the authenticated user.
+      // First identify the portfolio without taking a transaction-row lock.
+      // All mutation paths acquire locks in portfolio-first order.
+      const [candidate] = await tx
+        .select({
+          portfolioId: transactions.portfolioId,
+        })
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.id, transactionId),
+            eq(transactions.userId, userId)
+          )
+        )
+        .limit(1);
+
+      if (!candidate) {
+        throw new Error("Transaction not found or not owned by you");
+      }
+
+      await lockPortfolioForMutation(
+        tx,
+        candidate.portfolioId,
+        userId
+      );
+
+      // Re-read after acquiring the lock to confirm the transaction still
+      // exists and belongs to the expected user and portfolio.
       const [target] = await tx
         .select()
         .from(transactions)
         .where(
           and(
-            eq(transactions.id, parsed.data.transactionId),
-            eq(transactions.userId, session.auth.id)
+            eq(transactions.id, transactionId),
+            eq(transactions.userId, userId),
+            eq(transactions.portfolioId, candidate.portfolioId)
           )
         )
         .limit(1);
@@ -180,28 +338,31 @@ export async function deleteTransaction(
         throw new Error("Transaction not found or not owned by you");
       }
 
-      // Repeat ownership and portfolio conditions in the DELETE itself.
+      // Repeat every ownership predicate in the actual DELETE statement.
       const [deletedTransaction] = await tx
         .delete(transactions)
         .where(
           and(
             eq(transactions.id, target.id),
-            eq(transactions.userId, session.auth.id),
+            eq(transactions.userId, userId),
             eq(transactions.portfolioId, target.portfolioId)
           )
         )
-        .returning({ id: transactions.id });
+        .returning({
+          id: transactions.id,
+        });
 
       if (!deletedTransaction) {
-        throw new Error("Transaction not found or not owned by you");
+        throw new Error("Transaction changed or is no longer available");
       }
 
-      // If deletion invalidates a later sell, recomputation throws and
-      // rolls back the entire transaction, including this deletion.
+      // Rebuild the current position after removing this ledger event.
+      // If a later SELL becomes invalid, the exception rolls back both
+      // the deletion and all other writes in this transaction.
       await recomputeHolding(
         tx,
         target.portfolioId,
-        session.auth.id,
+        userId,
         target.coinId,
         target.symbol
       );
