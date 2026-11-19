@@ -76,8 +76,9 @@ export default function EditHoldingModal({
         </div>
 
         <div className="text-xs text-secondary bg-warning/5 border border-warning/20 rounded-lg px-3 py-2">
-          Editing corrects the current position. It does not modify your
-          transaction history.
+          Saving records a position adjustment in your transaction history.
+          Previous buys and sells are preserved. Set quantity to zero to close
+          this position while keeping its history.
         </div>
 
         {state && "error" in state && (
