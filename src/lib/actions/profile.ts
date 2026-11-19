@@ -1,20 +1,24 @@
 // src/lib/actions/profile.ts
 //
-// Server Actions for profile mutations.
+// Server Actions for profile and onboarding mutations.
 //
-// ─── Pattern ─────────────────────────────────────────────────────────────
-// Every action follows the same shape:
-//   1. Authorize — getCurrentUser() and bail if unauthenticated.
-//   2. Validate — Zod schema. FormData is untrusted input even when it
-//      comes from our own form: someone can POST directly.
-//   3. Mutate — wrapped in a transaction if it touches multiple tables.
-//   4. Invalidate — revalidatePath so cached Server Components re-render.
-//   5. Return — `{ success: true }` or `{ error: string }`.
+// Security:
+// - Every action requires a verified Supabase session.
+// - The authenticated user ID is the only source of profile ownership.
+// - Browser-submitted profile IDs and user IDs are never trusted.
+// - Database mutations include explicit ownership predicates.
 //
-// ─── Redirects ───────────────────────────────────────────────────────────
-// redirect() throws a special NextError — it must NOT be inside a try/catch
-// that swallows it. Both actions call it at the very end, after all
-// mutation logic is complete.
+// Consistency:
+// - Onboarding updates the profile and provisions the default portfolio
+//   inside one database transaction.
+// - The profile UPDATE acquires a PostgreSQL row lock. Concurrent onboarding
+//   requests for the same user therefore serialize before checking whether
+//   the default portfolio already exists.
+// - A missing profile aborts the entire onboarding transaction.
+//
+// Redirect handling:
+// Next.js redirect() throws internally. It is intentionally called outside
+// mutation try/catch blocks so that successful redirects are not swallowed.
 
 "use server";
 
@@ -22,16 +26,24 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+
 import { db } from "@/lib/db";
-import { profiles, portfolios } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/get-current-user";
+import { profiles, portfolios } from "@/db/schema";
 
-// ─── Schemas ─────────────────────────────────────────────────────────────
+// --------------------------------------------------
+// Validation schemas
+// --------------------------------------------------
 
-// Currencies must match the codes we render in the settings dropdown.
-// Keep this in sync with src/mock/settings.ts when we replace it with
-// server-driven data in Phase 2.6.
-const SUPPORTED_CURRENCIES = ["USD", "EUR", "GBP", "KES", "JPY", "NGN"] as const;
+// Keep supported currencies aligned with the settings UI.
+const SUPPORTED_CURRENCIES = [
+  "USD",
+  "EUR",
+  "GBP",
+  "KES",
+  "JPY",
+  "NGN",
+] as const;
 
 const OnboardingSchema = z.object({
   displayName: z
@@ -47,28 +59,37 @@ const UpdateProfileSchema = z.object({
   currency: z.enum(SUPPORTED_CURRENCIES),
 });
 
-// ─── Action results ──────────────────────────────────────────────────────
+// --------------------------------------------------
+// Action results
+// --------------------------------------------------
 
-export type ActionResult = { success: true } | { error: string };
+export type ActionResult =
+  | { success: true }
+  | { error: string };
 
-// ─── completeOnboarding ──────────────────────────────────────────────────
-//
-// Called from /onboarding. Sets display_name, currency, and onboarded_at,
-// and provisions a default portfolio if the user has none. The default
-// portfolio matters: the dashboard's "Total Value" and charts need a
-// portfolio to query; without one they'd show empty states on a brand-new
-// account, which looks broken even though it isn't.
-//
-// Wrapped in a transaction so a partial failure (say, profile update
-// succeeds but portfolio insert fails) rolls back cleanly. Retrying after
-// a rolled-back transaction is safe — the ON CONFLICT-style guards make
-// the action idempotent.
+// --------------------------------------------------
+// Complete onboarding
+// --------------------------------------------------
 
+/**
+ * Complete first-run onboarding for the authenticated user.
+ *
+ * The profile update and default portfolio provisioning are atomic.
+ * Updating the profile also acquires a row-level lock, serializing concurrent
+ * onboarding attempts for the same user.
+ *
+ * This prevents duplicate default portfolios without imposing a global
+ * one-portfolio-per-user constraint, which would conflict with the future
+ * multiple-portfolio feature.
+ */
 export async function completeOnboarding(
   formData: FormData
 ): Promise<ActionResult> {
   const session = await getCurrentUser();
-  if (!session) redirect("/login");
+
+  if (!session) {
+    redirect("/login");
+  }
 
   const parsed = OnboardingSchema.safeParse({
     displayName: formData.get("displayName"),
@@ -76,31 +97,52 @@ export async function completeOnboarding(
   });
 
   if (!parsed.success) {
-    // Return the first field error — one at a time is easier to display.
-    return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+    return {
+      error: parsed.error.issues[0]?.message ?? "Invalid input",
+    };
   }
 
-  const { displayName, currency } = parsed.data;
   const userId = session.auth.id;
+  const { displayName, currency } = parsed.data;
 
   try {
     await db.transaction(async (tx) => {
-      await tx
+      // This UPDATE is both the profile mutation and the serialization
+      // point. PostgreSQL holds the row lock until this transaction ends.
+      //
+      // A concurrent onboarding request for this user waits here. Under
+      // PostgreSQL's default READ COMMITTED isolation, its following SELECT
+      // sees the portfolio committed by the preceding request.
+      const [updatedProfile] = await tx
         .update(profiles)
         .set({
           displayName,
           currency,
           onboardedAt: new Date(),
         })
-        .where(eq(profiles.id, userId));
+        .where(eq(profiles.id, userId))
+        .returning({
+          id: profiles.id,
+        });
 
-      const existing = await tx
-        .select({ id: portfolios.id })
+      // Do not create a portfolio for an identity whose profile could not
+      // be updated. Throwing rolls back the entire onboarding transaction.
+      if (!updatedProfile) {
+        throw new Error(
+          "Profile not found for authenticated onboarding user"
+        );
+      }
+
+      const [existingPortfolio] = await tx
+        .select({
+          id: portfolios.id,
+        })
         .from(portfolios)
         .where(eq(portfolios.userId, userId))
+        .orderBy(portfolios.createdAt)
         .limit(1);
 
-      if (existing.length === 0) {
+      if (!existingPortfolio) {
         await tx.insert(portfolios).values({
           userId,
           name: "Main",
@@ -110,29 +152,37 @@ export async function completeOnboarding(
     });
   } catch (err) {
     console.error("[completeOnboarding] transaction failed", err);
-    return { error: "Something went wrong. Please try again." };
+
+    return {
+      error: "Failed to complete onboarding. Please try again.",
+    };
   }
 
-  // Invalidate everything under the dashboard — layout, pages, and any
-  // client components using useQuery for user-scoped data (none yet, but
-  // this future-proofs the invalidation).
   revalidatePath("/", "layout");
 
+  // Keep redirect outside the try/catch. Next.js implements redirect()
+  // using a special thrown value that must propagate to the framework.
   redirect("/");
 }
 
-// ─── updateProfile ───────────────────────────────────────────────────────
-//
-// Called from the Settings page. Unlike completeOnboarding, this does not
-// touch onboarded_at — the user has already onboarded, they're just
-// updating fields. Returns ActionResult so the settings form can show
-// inline success/error state without a page reload.
+// --------------------------------------------------
+// Update profile
+// --------------------------------------------------
 
+/**
+ * Update the authenticated user's display name and preferred currency.
+ *
+ * This operation deliberately does not modify onboardedAt. It is used
+ * after onboarding has already been completed.
+ */
 export async function updateProfile(
   formData: FormData
 ): Promise<ActionResult> {
   const session = await getCurrentUser();
-  if (!session) return { error: "Not authenticated" };
+
+  if (!session) {
+    return { error: "Not authenticated" };
+  }
 
   const parsed = UpdateProfileSchema.safeParse({
     displayName: formData.get("displayName"),
@@ -140,24 +190,37 @@ export async function updateProfile(
   });
 
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+    return {
+      error: parsed.error.issues[0]?.message ?? "Invalid input",
+    };
   }
 
   try {
-    await db
+    const [updatedProfile] = await db
       .update(profiles)
       .set({
         displayName: parsed.data.displayName,
         currency: parsed.data.currency,
       })
-      .where(eq(profiles.id, session.auth.id));
+      .where(eq(profiles.id, session.auth.id))
+      .returning({
+        id: profiles.id,
+      });
+
+    if (!updatedProfile) {
+      return {
+        error: "Profile not found. Please sign in again.",
+      };
+    }
   } catch (err) {
     console.error("[updateProfile] update failed", err);
-    return { error: "Failed to save. Please try again." };
+
+    return {
+      error: "Failed to save. Please try again.",
+    };
   }
 
-  // Revalidate the dashboard layout so the sidebar and navbar reflect the
-  // new display name immediately.
   revalidatePath("/", "layout");
+
   return { success: true };
 }
