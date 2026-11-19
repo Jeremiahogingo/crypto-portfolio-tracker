@@ -1,681 +1,495 @@
-# ₿ Crypto Portfolio Tracker
+# Crypto Portfolio Tracker
 
-> A secure, full-stack cryptocurrency portfolio management and analytics platform for monitoring digital assets, analyzing investment performance, tracking market movements, and managing portfolio risk from a unified dashboard.
+A full-stack cryptocurrency portfolio management and market-information application for recording holdings, tracking portfolio performance, and exploring cryptocurrency market data.
 
-![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)
-![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?logo=typescript)
-![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-38BDF8?logo=tailwindcss)
-![Chart.js](https://img.shields.io/badge/Chart.js-4-FF6384?logo=chartdotjs)
-![TanStack Query](https://img.shields.io/badge/TanStack_Query-5-FF4154?logo=reactquery)
-![License](https://img.shields.io/badge/License-MIT-green)
+![Next.js 16](https://img.shields.io/badge/Next.js-16-black?logo=next.js)
+![React 19](https://img.shields.io/badge/React-19-149ECA?logo=react)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript)
+![Tailwind CSS 4](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss)
+![Supabase](https://img.shields.io/badge/Supabase-Auth%20%7C%20PostgreSQL-3ECF8E?logo=supabase)
 
----
-
-## 📖 Overview
-
-**Crypto Portfolio Tracker** is a modern web application designed to help cryptocurrency investors manage and analyze their digital-asset portfolios from a single platform.
-
-The system combines portfolio management, market data, performance analytics, interactive visualizations, watchlists, price alerts, and market news into one dashboard.
-
-The project is designed with a strong focus on:
-
-- Secure user and portfolio management
-- Real-time and historical market data
-- Investment performance analysis
-- Data visualization
-- API integration
-- Responsive user experience
-- Scalable software architecture
-
-The platform is intended to function as a **portfolio management and decision-support system**, not as a custodial cryptocurrency wallet or automatic trading platform.
+> **Product boundary:** Crypto Portfolio Tracker is a portfolio-management and decision-support application. It is not a custodial wallet, broker, exchange, automated trading engine, or tax-preparation system. It does not require users to provide wallet seed phrases or private keys for its core workflow.
 
 ---
 
-## 🎯 Problem Statement
+## Contents
 
-Cryptocurrency investors may hold different assets across multiple wallets and exchanges, making it difficult to obtain a clear view of their overall investment performance.
+- [Overview](#overview)
+- [Capabilities](#capabilities)
+- [Technology stack](#technology-stack)
+- [Architecture](#architecture)
+- [Application routes](#application-routes)
+- [HTTP API](#http-api)
+- [Portfolio accounting model](#portfolio-accounting-model)
+- [Database](#database)
+- [Security model](#security-model)
+- [Getting started](#getting-started)
+- [Environment configuration](#environment-configuration)
+- [Development commands](#development-commands)
+- [Testing](#testing)
+- [Database migrations](#database-migrations)
+- [Deployment](#deployment)
+- [Known limitations and future work](#known-limitations-and-future-work)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [Security reporting](#security-reporting)
 
-Common challenges include:
+## Overview
 
-- Tracking assets across different platforms
-- Calculating overall profit and loss
-- Monitoring portfolio growth
-- Comparing individual asset performance
-- Understanding asset allocation and concentration
-- Keeping track of market movements
-- Receiving timely price notifications
+Crypto Portfolio Tracker centralizes user-maintained cryptocurrency positions and market information in one web application. It combines portfolio management, transaction history, market discovery, watchlists, alert configuration, news aggregation, and analytics.
 
-This application addresses these challenges by providing a centralized portfolio management and analytics environment.
+The application is implemented as a **Next.js App Router** project. The browser-facing interface, server-rendered pages, HTTP Route Handlers, and authenticated Server Actions are maintained in one application. Supabase provides authentication and PostgreSQL hosting; Drizzle ORM provides typed database access and versioned schema migrations.
 
----
+The system emphasizes:
 
-## ✨ Core Features
+- explicit user and portfolio ownership;
+- transaction-ledger-based position reconstruction;
+- decimal arithmetic for financial calculations;
+- transactional consistency and per-portfolio mutation locking;
+- clear separation between public market data and private user data;
+- documented database, API, security, and operational boundaries.
 
-### 📊 Portfolio Dashboard
+## Capabilities
 
-- Total portfolio value
-- Net invested value
-- Daily profit/loss
-- Overall profit/loss
-- Portfolio ROI
-- Number of assets held
-- Portfolio performance overview
-- Portfolio growth visualization
+### Portfolio management
 
-### 💼 Portfolio Management
+- Maintain a user's cryptocurrency holdings and position details.
+- Record purchases and sales in a transaction ledger.
+- Correct a position through an adjustment event without deleting earlier trade history.
+- Reconstruct the current holding from the ordered ledger.
+- View portfolio value and unrealized performance using current market prices.
 
-- Add cryptocurrency holdings
-- Record investment transactions
-- Edit and delete transactions
-- Track quantity owned
-- Track average purchase price
-- Calculate current value
-- Calculate realized and unrealized performance
+### Market discovery
 
-### 🌍 Cryptocurrency Markets
+- Browse normalized cryptocurrency market listings.
+- View aggregate market statistics and dominance metrics.
+- View trending assets.
+- Use market-data fallbacks when an upstream provider is unavailable.
 
-- Live cryptocurrency prices
-- Market capitalization
-- 24-hour volume
-- 24-hour price changes
-- Market rankings
-- Top gainers
-- Top losers
-- Trending assets
-- Search and filtering
+### Portfolio analytics
 
-### 📈 Portfolio Analytics
+- Review current portfolio value, cost basis, and profit/loss.
+- Compare the performance of current holdings.
+- Review net invested value derived from recorded buys and sells.
+- View monthly buy/sell activity and cumulative net investment.
 
-- Daily performance
-- Weekly performance
-- Monthly performance
-- Yearly performance
-- Lifetime returns
-- ROI analysis
-- Profit/loss trends
-- Portfolio growth
-- Asset performance comparison
-- Asset allocation analysis
+The analytics distinguish current unrealized position performance from cash-flow activity. The transaction ledger alone is not a historical portfolio-valuation snapshot system.
 
-### 📉 Interactive Visualizations
+### Watchlist and alerts
 
-- Portfolio performance charts
-- Historical price charts
-- Portfolio growth charts
-- Asset allocation charts
-- Performance comparison charts
-- Market trend visualizations
+- Maintain a user-owned watchlist of tracked assets.
+- Create and manage stored price-alert configurations.
 
-### ⭐ Watchlist
+An alert configuration being stored does not, by itself, imply that a continuously running scheduler, email sender, or push-notification worker is deployed. See [Capabilities and limitations](docs/product/capabilities-and-limitations.md).
 
-- Add favorite cryptocurrencies
-- Remove assets from watchlists
-- Monitor price movements
-- Monitor percentage changes
-- View quick market statistics
+### News
 
-### 🔔 Price Alerts
+- Aggregate cryptocurrency news from configured RSS/Atom sources.
+- Normalize feed records into a common article representation.
+- Remove duplicate article URLs and order articles by publication time.
+- Tolerate partial provider failures and use fallback content when all configured feeds fail.
 
-- Target-price alerts
-- Percentage-change alerts
-- Gain/loss notifications
-- Browser notifications
-- Alert management
+## Technology stack
 
-### 📰 Market News
+| Area | Technology | Responsibility |
+|---|---|---|
+| Application framework | Next.js 16 App Router | Pages, layouts, Route Handlers, Server Actions, request proxy |
+| UI runtime | React 19, TypeScript | Typed application and component implementation |
+| Styling | Tailwind CSS 4 | Responsive interface styling |
+| Authentication | Supabase Auth, `@supabase/ssr` | Browser/server authentication and cookie-aware sessions |
+| Database | Supabase PostgreSQL | User profiles, portfolios, holdings, transactions, watchlists, alerts |
+| ORM and migrations | Drizzle ORM, Drizzle Kit | Typed schema, SQL generation, migration history |
+| PostgreSQL driver | `postgres` (postgres-js) | Server-side database connectivity |
+| Validation | Zod, React Hook Form | Form input validation and action contracts |
+| Financial arithmetic | `decimal.js` | Decimal-safe monetary and quantity calculations |
+| Client data state | TanStack Query, Axios | Client query state and HTTP requests where used |
+| Market data | CoinGecko API | Market listings, global statistics, trending data |
+| News data | RSS/Atom feeds | Aggregated market-news records |
+| Visualizations | Chart.js, `react-chartjs-2` | Portfolio and market charts |
+| UI utilities | Lucide React, Framer Motion, `next-themes`, `date-fns` | Icons, animation, theme, date handling |
+| Tests | Node test runner through `tsx` | Unit, analytics, and PostgreSQL integration tests |
 
-- Cryptocurrency news
-- Market updates
-- Coin-specific news
-- Industry announcements
-- Regulatory developments
+The installed package versions in `package.json` and `package-lock.json` are authoritative. This table describes the current application architecture rather than prescribing versions independently of the lockfile.
 
-### ⚙️ User Settings
+## Architecture
 
-- Account management
-- Currency preferences
-- Theme selection
-- Notification preferences
-- Application preferences
+### High-level design
 
----
-
-## 🔐 Security
-
-Security is a core design consideration of the platform.
-
-The system follows a **non-custodial approach**, meaning the application does not store users' cryptocurrency private keys or seed phrases and does not directly hold users' funds.
-
-Planned security measures include:
-
-- Secure authentication
-- Password hashing
-- Session management
-- Role-based authorization
-- Input validation
-- API rate limiting
-- HTTPS/TLS communication
-- Secure environment variables
-- Protection against unauthorized portfolio access
-- Encrypted storage of sensitive credentials where required
-- Audit logging for security-sensitive activities
-- Restricted, read-only exchange API permissions
-
-### Exchange API Security
-
-Where exchange synchronization is supported, the system is designed to use **read-only API credentials** whenever possible.
-
-Trading and withdrawal permissions should remain disabled.
-
-```text
-User
-  │
-  ▼
-Crypto Portfolio Tracker
-  │
-  ▼
-Secure Backend
-  │
-  ▼
-Read-Only Exchange API
-````
-
-Private keys and seed phrases are never required by the application.
-
----
-
-## 🏗️ System Architecture
-
-```text
-                   External Data Sources
-                ┌──────────┬──────────┬──────────┐
-                │          │          │          │
-                ▼          ▼          ▼          ▼
-           CoinGecko    Binance    News API   Other Sources
-                │          │          │
-                └──────────┴──────┬───┘
-                                  ▼
-                         Data Service Layer
-                                  │
-                                  ▼
-                       TanStack Query Cache
-                                  │
-                                  ▼
-                        Business Logic Layer
-                                  │
-             ┌────────────────────┼────────────────────┐
-             │                    │                    │
-             ▼                    ▼                    ▼
-        Dashboard          Portfolio Manager       Analytics
-             │                    │                    │
-             └────────────────────┼────────────────────┘
-                                  ▼
-                         UI / Visualization
-                                  │
-                                  ▼
-                                User
+```mermaid
+flowchart TD
+    Browser[Browser] --> Next[Next.js App Router]
+    Next --> UI[Pages and React Components]
+    Next --> Actions[Authenticated Server Actions]
+    Next --> Routes[Public Market Route Handlers]
+    Actions --> Auth[Supabase session verification]
+    Auth --> Domain[Portfolio and domain services]
+    Domain --> Ledger[Decimal ledger and analytics]
+    Ledger --> ORM[Drizzle ORM / postgres-js]
+    ORM --> DB[(Supabase PostgreSQL)]
+    Routes --> Providers[CoinGecko and RSS/Atom adapters]
+    Providers --> Cache[Server-side caching and fallback layer]
+    Cache --> Routes
 ```
 
-The application is structured into separate presentation, business logic, data-access, and service layers to improve maintainability and scalability.
+### Main code areas
 
----
+| Path | Responsibility |
+|---|---|
+| `src/app/` | App Router pages, layouts, and HTTP Route Handlers |
+| `src/components/` | Shared UI and feature components |
+| `src/db/schema.ts` | Drizzle table, relation, index, and constraint definitions |
+| `src/lib/actions/` | Server Actions for authenticated user-owned mutations |
+| `src/lib/analytics/` | Analytics calculations over loaded portfolio data |
+| `src/lib/api/` | External market/news adapters and normalization |
+| `src/lib/auth/` | Current-user and session helpers |
+| `src/lib/db/` | Server-only Drizzle/PostgreSQL client |
+| `src/lib/portfolio/` | Portfolio queries, decimal helpers, ledger replay, locking, holding recomputation |
+| `src/lib/supabase/` | Browser and request-scoped Supabase clients |
+| `src/types/` | Shared TypeScript domain types |
+| `src/utils/` | Formatting and shared utility functions |
+| `src/proxy.ts` | Next.js 16 request interception entry point |
+| `drizzle/` | SQL migrations, snapshots, and migration journal |
+| `tests/` | Ledger, analytics, and database integration tests |
+| `docs/` | Architecture, API, database, security, development, and operations documentation |
 
-## 🛠️ Technology Stack
+Portfolio mutations are **Server Actions**, not a separately deployed REST backend. The HTTP API currently exposed by Route Handlers is focused on public market and news information.
 
-### Frontend
+## Application routes
 
-* Next.js 15
-* React
-* TypeScript
-* Tailwind CSS
+The current production build exposes these application routes:
 
-### Data Visualization
+| Route | Purpose |
+|---|---|
+| `/` | Dashboard |
+| `/portfolio` | Portfolio and transaction management |
+| `/analytics` | Portfolio analytics and visualizations |
+| `/markets` | Cryptocurrency market discovery |
+| `/news` | Aggregated cryptocurrency news |
+| `/watchlist` | User watchlist |
+| `/alerts` | Alert configuration management |
+| `/settings` | User settings |
+| `/onboarding` | Initial profile setup |
+| `/login` | Authentication entry |
+| `/signup` | Account registration |
 
-* Chart.js
-* react-chartjs-2
+The exact page composition and access behaviour are defined by the current source under `src/app/` and the request proxy.
 
-### Data Fetching
+## HTTP API
 
-* Axios
-* TanStack React Query
+The currently documented HTTP API is GET-only and provides public market/news information. Portfolio, profile, watchlist, alert, and holding mutations are implemented through authenticated Server Actions.
 
-### Authentication
+Base URL for local development: `http://localhost:3000`.
 
-* NextAuth.js / Auth.js
+| Method and path | Purpose | Route revalidation |
+|---|---|---:|
+| `GET /api/crypto/global` | Aggregate market statistics | 120 seconds |
+| `GET /api/crypto/markets` | Normalized market coin list | 60 seconds |
+| `GET /api/crypto/trending` | Trending assets | 300 seconds |
+| `GET /api/crypto/news` | Aggregated RSS/Atom news | 300 seconds |
 
-### Forms & Validation
+### Query parameters
 
-* React Hook Form
-* Zod
+`GET /api/crypto/markets`
 
-### UI & Animation
+| Parameter | Default | Description |
+|---|---:|---|
+| `vs_currency` | `usd` | Quote currency |
+| `per_page` | `100` | Requested page size, clamped to 1–250 |
+| `page` | `1` | Page number, minimum 1 |
+| `ids` | omitted | Comma-separated provider asset IDs |
+| `sparkline` | `false` | Request sparkline data when set to `true` |
 
-* Lucide React
-* Framer Motion
+`GET /api/crypto/news`
 
-### Theme Management
+| Parameter | Default | Description |
+|---|---:|---|
+| `limit` | `30` | Number of articles, clamped to 1–50 |
 
-* next-themes
+The global and trending endpoints currently require no query parameters.
 
-### Utilities
+### Response envelope and fallback behaviour
 
-* date-fns
+Market endpoints use a normalized response envelope similar to:
 
-### Planned Backend & Data Layer
-
-* PostgreSQL
-* Prisma or equivalent ORM
-* REST APIs
-* WebSockets for selected real-time data streams
-
----
-
-## 🗂️ Project Structure
-
-```text
-crypto-portfolio-tracker/
-│
-├── public/
-│   ├── icons/
-│   ├── images/
-│   └── screenshots/
-│
-├── src/
-│   ├── app/
-│   │   ├── dashboard/
-│   │   ├── portfolio/
-│   │   ├── analytics/
-│   │   ├── markets/
-│   │   ├── watchlist/
-│   │   ├── news/
-│   │   ├── alerts/
-│   │   ├── settings/
-│   │   └── layout.tsx
-│   │
-│   ├── components/
-│   │   ├── charts/
-│   │   ├── dashboard/
-│   │   ├── layout/
-│   │   ├── portfolio/
-│   │   ├── tables/
-│   │   ├── cards/
-│   │   ├── navbar/
-│   │   └── ui/
-│   │
-│   ├── context/
-│   ├── hooks/
-│   ├── services/
-│   ├── lib/
-│   ├── types/
-│   ├── utils/
-│   └── constants/
-│
-├── .env.local
-├── package.json
-├── tsconfig.json
-├── next.config.ts
-└── README.md
+```json
+{
+  "data": "<route-specific payload>",
+  "meta": {
+    "source": "live",
+    "fetchedAt": "2026-11-19T08:00:00.000Z",
+    "count": 1
+  }
+}
 ```
 
----
+`meta.source` identifies whether the route used live upstream data or local fallback data. A successful HTTP response can contain fallback data when an upstream service is unavailable. Clients that need to communicate freshness should inspect this metadata.
 
-## 🔗 API Integrations
+Examples:
 
-### CoinGecko
-
-Used for cryptocurrency market information such as:
-
-* Current prices
-* Market capitalization
-* Historical market data
-* Asset information
-* Market statistics
-
-### Binance
-
-Planned for:
-
-* Exchange market data
-* Market tickers
-* Selected real-time price streams
-* Optional exchange portfolio synchronization
-
-### News Provider
-
-Used for:
-
-* Cryptocurrency news
-* Market updates
-* Industry announcements
-* Regulatory news
-
-> API providers may change as the project evolves. The service layer is designed to make external integrations replaceable without redesigning the user interface.
-
----
-
-## 📸 Screenshots
-
-### Dashboard
-
-![Dashboard](public/screenshots/Dashboard.png)
-
-### Portfolio
-
-![Portfolio](public/screenshots/Portfolio.png)
-
-### Analytics
-
-![Analytics](public/screenshots/Analytics.png)
-
-### Markets
-
-![Markets](public/screenshots/Markets.png)
-
-### Watchlist
-
-![Watchlist](public/screenshots/Watchlist.png)
-
----
-
-## 📊 Main System Modules
-
-| Module    | Purpose                                             |
-| --------- | --------------------------------------------------- |
-| Dashboard | Portfolio summary and market overview               |
-| Portfolio | Manage holdings and transactions                    |
-| Analytics | Analyze returns, growth, allocation and performance |
-| Markets   | Explore cryptocurrency market data                  |
-| Watchlist | Monitor selected assets                             |
-| Alerts    | Manage price and percentage alerts                  |
-| News      | View cryptocurrency market news                     |
-| Settings  | Manage account and application preferences          |
-
----
-
-## 🧮 Key Analytics
-
-The system calculates and visualizes important portfolio metrics including:
-
-### Portfolio Value
-
-```text
-Portfolio Value =
-Σ (Asset Quantity × Current Market Price)
+```bash
+curl http://localhost:3000/api/crypto/global
+curl "http://localhost:3000/api/crypto/markets?vs_currency=usd&per_page=50&page=1"
+curl http://localhost:3000/api/crypto/trending
+curl "http://localhost:3000/api/crypto/news?limit=20"
 ```
 
-### Profit / Loss
+For the full endpoint contract, fields, cache behaviour, and error handling, see [API Reference](docs/api/reference.md).
 
-```text
-Profit/Loss =
-Current Portfolio Value − Invested Capital
-```
+## Portfolio accounting model
 
-### ROI
+The transaction ledger is the source of truth. The `holdings` table is a derived projection reconstructed from the ordered transactions for a user, portfolio, and asset.
 
-```text
-ROI (%) =
-((Current Value − Invested Value) / Invested Value) × 100
-```
+### Supported ledger events
 
-Additional analytics can include:
+| Event | Effect on quantity | Effect on acquisition cost | Cash-flow analytics |
+|---|---|---|---|
+| `buy` | Adds quantity | Adds recorded acquisition value | Included as an investment outflow |
+| `sell` | Removes quantity | Removes cost at the weighted-average basis before the sale | Included as proceeds |
+| `adjustment` | Replaces quantity with the corrected absolute quantity | Resets cost to the correction's recorded value | Excluded |
 
-* Asset allocation percentage
-* Historical portfolio growth
-* Individual asset performance
-* Investment timeline
-* Portfolio concentration
-* Risk distribution
+An adjustment is a correction event, not a purchase or sale. It preserves earlier transaction history. An adjustment with zero quantity closes the current holding projection without deleting its ledger history.
 
----
+### Weighted-average cost
 
-## 🧪 Testing
+For each SELL, the ledger removes the quantity multiplied by the average acquisition cost immediately before that sale. Sale proceeds are not subtracted from the remaining holding cost basis.
 
-The project will include testing at multiple levels:
+The analytics keep two concepts separate:
 
-* Unit testing
-* Component testing
-* API testing
-* Integration testing
-* Authentication and authorization testing
-* Security testing
-* End-to-end testing
+- **Net cash invested:** recorded BUY values minus recorded SELL proceeds.
+- **Unrealized position P&L:** current holding value minus remaining holding cost basis.
 
-Particular attention will be given to testing:
+The ledger uses weighted-average cost; it is not a FIFO or specific-identification tax-lot engine.
 
-* Portfolio calculations
-* Transaction handling
-* Unauthorized data access
-* API failures
-* Invalid user input
-* Alert conditions
+### Precision and deterministic replay
 
----
+| Value | PostgreSQL type |
+|---|---|
+| Quantity | `NUMERIC(28,8)` |
+| Unit price and holding cost basis | `NUMERIC(20,8)` |
+| Transaction total value | `NUMERIC(48,16)` |
 
-## ⚙️ Installation
+Financial values are parsed from strings with `decimal.js`, avoiding premature conversion through JavaScript binary floating-point numbers. Transaction totals retain 16 fractional places because multiplying two scale-8 values can require 16 decimal places.
 
-### 1. Clone the Repository
+Ledger replay is ordered by `executed_at`, then by the database-generated unique `ledger_sequence` for events with equal timestamps. Every mutation locks the owning portfolio row, writes the ledger event, replays the position, and updates or removes the holding within one PostgreSQL transaction.
+
+See [Ledger Accounting](docs/database/ledger-accounting.md) for the complete rules and examples.
+
+## Database
+
+The application uses Supabase PostgreSQL with Drizzle ORM. The main application tables are:
+
+| Table | Purpose |
+|---|---|
+| `profiles` | Application profile associated with a Supabase Auth user |
+| `portfolios` | User-owned portfolio records |
+| `holdings` | Current position projections |
+| `transactions` | BUY, SELL, and ADJUSTMENT ledger events |
+| `watchlist_items` | User-owned asset watchlist entries |
+| `alerts` | User-owned price-alert configurations |
+
+Ownership is represented using the authenticated user ID and portfolio relationships. The schema also contains indexes, foreign keys, unique constraints, and Row-Level Security policies. The exact definitions are maintained in `src/db/schema.ts` and the versioned SQL files under `drizzle/`.
+
+**Important database boundary:** the server-side Drizzle connection uses a privileged database role that can bypass RLS. Therefore RLS is not the only authorization layer for application queries. Every user-facing privileged Drizzle query must explicitly scope records to the verified session's user ID.
+
+The database migration history currently includes `0005_transaction-adjustment-events` and `0006_transaction-total-precision` for the deterministic event sequence, transaction constraints, and scale-16 transaction totals.
+
+Detailed references:
+
+- [Database schema reference](docs/database/schema-reference.md)
+- [Migration guide](docs/database/migrations.md)
+- [RLS and privileges](docs/database/rls-and-privileges.md)
+
+## Security model
+
+The application applies layered controls:
+
+1. Verify the Supabase session on protected server operations.
+2. Derive user identity from the verified session; do not trust a browser-supplied `userId` as authorization.
+3. Validate Server Action input at the server boundary.
+4. Scope privileged database queries explicitly by owner and relevant resource IDs.
+5. Keep RLS policies enabled as a database-side protection layer for supported authenticated access paths.
+6. Use database constraints and foreign keys to protect data invariants.
+7. Keep database connection strings and provider credentials on the server.
+8. Execute ledger writes and holding recomputation atomically under a portfolio lock.
+
+The application does not need wallet seed phrases or private keys for its core tracking workflow. API credentials must not be exposed via `NEXT_PUBLIC_*` environment variables. Never commit `.env.local` or production secrets.
+
+Security details, trust boundaries, and reporting guidance:
+
+- [Security overview](docs/security/overview.md)
+- [Threat model](docs/security/threat-model.md)
+- [Access-control matrix](docs/security/access-control-matrix.md)
+- [Security policy](SECURITY.md)
+
+## Getting started
+
+### Prerequisites
+
+- Node.js version compatible with the project toolchain (the verified development environment used Node.js 24.x).
+- npm.
+- A Supabase project with Auth and PostgreSQL configured.
+- A database connection string with permissions appropriate for the server-side Drizzle migrations and application queries.
+- Optional CoinGecko Demo API credentials if required by the configured provider plan.
+
+### Clone and install
 
 ```bash
 git clone https://github.com/Jeremiahogingo/crypto-portfolio-tracker.git
 cd crypto-portfolio-tracker
-```
-
-### 2. Install Dependencies
-
-```bash
 npm install
 ```
 
-### 3. Configure Environment Variables
+### Configure environment
 
-Create a `.env.local` file:
+Create `.env.local` in the repository root. The current application configuration uses:
 
-```env
-# Authentication
-NEXTAUTH_SECRET=
-NEXTAUTH_URL=http://localhost:3000
+```dotenv
+# Supabase project configuration
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
 
-# Server-side API credentials
-COINGECKO_API_KEY=
-BINANCE_API_KEY=
-BINANCE_API_SECRET=
-NEWS_API_KEY=
-
-# Database
+# Server-only PostgreSQL connection for Drizzle
 DATABASE_URL=
+
+# Optional CoinGecko configuration
+COINGECKO_BASE_URL=https://api.coingecko.com/api/v3
+COINGECKO_DEMO_API_KEY=
 ```
 
-> **Important:** Secret API credentials must remain server-side and must never be exposed using `NEXT_PUBLIC_*` environment variables.
+Use the values from the intended Supabase project. `DATABASE_URL` and provider credentials are server-only values. Do not prefix them with `NEXT_PUBLIC_`.
 
-### 4. Start the Development Server
+The exact environment contract and local setup notes are maintained in [Development Setup](docs/development/setup.md). Do not commit `.env.local`.
+
+### Start the development server
 
 ```bash
 npm run dev
 ```
 
-Open:
+Open `http://localhost:3000` in a browser. Complete signup and onboarding to create an application profile and default portfolio before using portfolio-dependent workflows.
 
-```text
-http://localhost:3000
-```
+## Development commands
 
----
+| Command | Purpose |
+|---|---|
+| `npm run dev` | Start the Next.js development server |
+| `npm run build` | Create the optimized production build |
+| `npm run start` | Start the production server after a successful build |
+| `npm run lint` | Run the configured ESLint command |
+| `npx tsc --noEmit` | Run TypeScript type checking |
+| `npm test` | Run ledger unit and analytics regression tests |
+| `npm run test:db` | Run PostgreSQL-backed ledger integration tests |
+| `npm audit --omit=dev` | Audit production dependencies |
 
-## 🚀 Production Build
+## Testing
 
-Create a production build:
+The repository has two test suites:
+
+### Unit and analytics tests
 
 ```bash
+npm test
+```
+
+These cover decimal parsing and formatting, BUY/SELL/ADJUSTMENT replay, weighted-average cost, precision boundaries, zero-quantity corrections, oversell handling, and the exclusion of adjustments from cash-flow analytics.
+
+### PostgreSQL integration tests
+
+```bash
+npm run test:db
+```
+
+The integration suite requires `DATABASE_URL` and an existing portfolio. It exercises the real database schema and Drizzle integration, including sequence ordering, adjustment replay, scale-16 values, oversell rollback, and adjustment-deletion rollback.
+
+The integration suite uses temporary coin identifiers and explicitly rolls back test transactions. It may briefly acquire a lock on an existing portfolio and consumes PostgreSQL sequence values even when the enclosing transaction rolls back. Sequence gaps are expected. Run it against a dedicated development or staging database rather than a busy production database.
+
+### Additional quality checks
+
+```bash
+npx tsc --noEmit
+npx eslint src tests
 npm run build
+npm audit --omit=dev
 ```
 
-Start the production server:
+See [Testing Strategy](docs/development/testing.md) for detailed coverage and test-environment guidance.
+
+## Database migrations
+
+The Drizzle schema is defined in `src/db/schema.ts`; migration SQL and snapshots are stored in `drizzle/`.
+
+Generate a migration after changing the schema:
 
 ```bash
-npm start
+npx drizzle-kit generate --name=describe-the-change
 ```
 
-The application can be deployed using platforms such as:
-
-* Vercel
-* Railway
-* Render
-* Netlify
-
----
-
-## 🗺️ Development Roadmap
-
-### Phase 1 — UI Foundation
-
-* [x] Project initialization
-* [x] Dashboard architecture
-* [x] Responsive navigation
-* [x] Reusable UI components
-* [x] Dashboard interface
-* [x] Portfolio interface
-* [x] Markets interface
-* [x] Analytics interface
-
-### Phase 2 — Core Application
-
-* [ ] Authentication
-* [ ] Database integration
-* [ ] Portfolio management
-* [ ] Transaction management
-* [ ] Portfolio calculations
-* [ ] Watchlists
-* [ ] Alerts
-
-### Phase 3 — Market Data
-
-* [ ] CoinGecko integration
-* [ ] Historical market data
-* [ ] Real-time market updates
-* [ ] Market search and filtering
-* [ ] News integration
-
-### Phase 4 — Security & Reliability
-
-* [ ] Authorization and access control
-* [ ] API credential protection
-* [ ] Rate limiting
-* [ ] Audit logging
-* [ ] Security testing
-* [ ] Error monitoring
-
-### Phase 5 — Advanced Features
-
-* [ ] Exchange synchronization
-* [ ] CSV import/export
-* [ ] PDF portfolio reports
-* [ ] Tax reporting
-* [ ] Staking tracking
-* [ ] DeFi tracking
-* [ ] NFT portfolio tracking
-* [ ] AI-assisted portfolio insights
-* [ ] Progressive Web App support
-
----
-
-## 🔮 Future Integrations
-
-The platform may support additional exchanges and data providers, including:
-
-* Coinbase
-* Kraken
-* Bybit
-* OKX
-* KuCoin
-* CoinMarketCap
-
-These integrations are planned extensions and are not required for the core portfolio tracking functionality.
-
----
-
-## 📌 Project Scope
-
-The core system focuses on **portfolio management, market monitoring, analytics, and decision support**.
-
-The application does **not** aim to:
-
-* Act as a cryptocurrency wallet
-* Store private keys or seed phrases
-* Hold users' cryptocurrency
-* Automatically execute trades
-
-This design reduces the security risks associated with custodial financial applications while still providing useful investment analytics.
-
----
-
-## 🎓 Academic & Technical Value
-
-This project demonstrates the practical application of software engineering concepts including:
-
-* Requirements analysis
-* System architecture and design
-* Database design
-* API integration
-* Authentication and authorization
-* Secure software development
-* Real-time data processing
-* Data analytics
-* Data visualization
-* Responsive UI design
-* Testing and quality assurance
-* Deployment and maintenance
-
-The project therefore combines **full-stack software engineering, financial analytics, API integration, and cybersecurity principles** within one system.
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome.
-
-1. Fork the repository.
-2. Create a feature branch:
+Review the generated SQL and snapshot before applying it. Apply migrations using:
 
 ```bash
-git checkout -b feature/new-feature
+npx drizzle-kit migrate
 ```
 
-3. Commit your changes:
+Do not use `drizzle-kit push` as a substitute for reviewed production migration history. Back up the target database according to the deployment procedure before applying production schema changes.
 
-```bash
-git commit -m "Add new feature"
-```
+See [Database Migrations](docs/database/migrations.md).
 
-4. Push the branch:
+## Deployment
 
-```bash
-git push origin feature/new-feature
-```
+The application can be deployed to a Next.js-compatible Node hosting environment. A deployment requires the environment variables for the intended Supabase project, a reachable PostgreSQL connection for Drizzle, and any optional provider credentials.
 
-5. Open a Pull Request.
+Recommended release sequence:
+
+1. Review application and database changes.
+2. Back up the database or verify the managed backup/restore procedure.
+3. Apply reviewed Drizzle migrations to the target environment.
+4. Deploy the application build with the matching environment configuration.
+5. Verify authentication, database connectivity, public market routes, and a controlled portfolio workflow.
+6. Inspect logs, upstream provider status, and fallback-source metadata.
+
+Do not run a schema migration from an unreviewed local working tree against production. Keep secrets in the hosting provider's secret store. See [Deployment](docs/operations/deployment.md), [Runbooks](docs/operations/runbooks.md), and [Backup and Restore](docs/operations/backup-and-restore.md).
+
+## Known limitations and future work
+
+The following boundaries should be understood when interpreting application output:
+
+- Market data is cached provider data, not a guaranteed real-time exchange feed.
+- Market and news routes may return local fallback data when an upstream service fails; inspect `meta.source` when freshness matters.
+- The current transaction ledger supports weighted-average cost, not tax-lot accounting such as FIFO or specific identification.
+- Transaction records alone do not provide historical daily portfolio valuations. That requires stored position and/or price snapshots.
+- The project is not a wallet, exchange, broker, or trade-execution platform.
+- Stored alert configurations do not imply that a continuously running evaluation or notification-delivery worker is deployed.
+- Multiple portfolio records are represented in the schema, but confirm current UI/action selection behaviour before assuming a full multi-portfolio switching workflow.
+
+Potential future directions include historical portfolio snapshots, CSV import/export, exchange read-only synchronization, tax-lot reporting, and scheduled notification delivery. These should be treated as future work until implemented, tested, and documented.
+
+## Documentation
+
+The documentation index is [`docs/README.md`](docs/README.md). It provides audience-based entry points and links to the detailed references:
+
+| Area | Documentation |
+|---|---|
+| Architecture | [System architecture](docs/architecture/system-architecture.md), [request lifecycle](docs/architecture/request-lifecycle.md), [architecture decisions](docs/architecture/decisions/) |
+| API | [HTTP API reference](docs/api/reference.md) |
+| Database | [Schema reference](docs/database/schema-reference.md), [ledger accounting](docs/database/ledger-accounting.md), [migrations](docs/database/migrations.md), [RLS and privileges](docs/database/rls-and-privileges.md) |
+| Security | [Overview](docs/security/overview.md), [threat model](docs/security/threat-model.md), [access-control matrix](docs/security/access-control-matrix.md) |
+| Development | [Setup](docs/development/setup.md), [testing](docs/development/testing.md), [contribution guidelines](CONTRIBUTING.md) |
+| Operations | [Deployment](docs/operations/deployment.md), [runbooks](docs/operations/runbooks.md), [backup and restore](docs/operations/backup-and-restore.md) |
+| Product | [Capabilities and limitations](docs/product/capabilities-and-limitations.md), [glossary](docs/glossary.md) |
+
+Documentation should change with the code. Update the corresponding guide when an API contract, database schema, security control, accounting rule, or operational procedure changes.
+
+## Contributing
+
+Contributions should preserve the application's ownership guarantees, financial invariants, and migration history. Before opening a change, run the relevant unit/integration tests, TypeScript checks, linting, and production build. Include tests for changes to financial calculations, mutation flows, or authorization boundaries.
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow and [SECURITY.md](SECURITY.md) for vulnerability reporting.
+
+## Project maintainer
+
+**Jeremiah Ogingo**  
+GitHub: [@Jeremiahogingo](https://github.com/Jeremiahogingo)
 
 ---
 
-## 📄 License
-
-This project is licensed under the **MIT License**.
-
-See the `LICENSE` file for details.
-
----
-
-## 👨‍💻 Author
-
-### Jeremiah Ogingo
-
-**Software Engineer | Full-Stack Developer | Cybersecurity Enthusiast**
-
-* GitHub: [Jeremiahogingo](https://github.com/Jeremiahogingo)
-* LinkedIn: [Jeremiah Ogingo](https://linkedin.com/in/jeremiah-omondi-30540432a)
-* Portfolio: [my-portfolio-eta-six-33.vercel.app](https://my-portfolio-eta-six-33.vercel.app)
-
----
-
-## ⭐ Support
-
-If you find this project useful, consider giving the repository a ⭐ on GitHub.
+*This README describes the current repository architecture and verified behaviour. Source code, exported types, and applied database migrations remain authoritative when implementation details change.*
