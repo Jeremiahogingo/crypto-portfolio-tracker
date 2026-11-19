@@ -1,8 +1,3 @@
-cd "D:\JavaScript\Next_js\crypto-portfolio-tracker"
-
-New-Item -ItemType Directory -Force .\docs | Out-Null
-
-@'
 # Financial Ledger and Position Accounting
 
 ## 1. Architecture
