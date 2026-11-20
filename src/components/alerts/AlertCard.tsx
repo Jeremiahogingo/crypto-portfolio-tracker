@@ -1,25 +1,9 @@
 // src/components/alerts/AlertCard.tsx
 //
-// Renders a single price alert with live context.
+// Renders a stored price alert with current market context.
 //
-// Receives AlertWithPrice — the DB row merged with current market data by
-// the parent. That merge is done once in AlertsView rather than per-card,
-// because fetching market data per card would spam CoinGecko.
-//
-// ─── States the card expresses ───────────────────────────────────────────
-// • Paused (enabled=false)   — dimmed, muted toggle
-// • Active + far from target — normal appearance
-// • Active + near target     — "Near target" warning badge (within 15%)
-// • Active + hit             — "Target hit" success badge
-//
-// "Hit" is display-only. No notifications yet (Phase 4). Showing the state
-// now is honest — the user knows when their target was crossed even without
-// receiving an email.
-//
-// ─── Toggle semantics ────────────────────────────────────────────────────
-// The toggle submits a form to toggleAlert. Unlike the removal star on
-// CoinCard, this IS a toggle: pausing keeps the alert so it can be resumed
-// later. That distinction matters — pausing is not deleting.
+// Target evaluation requires an enabled alert and a verified live quote.
+// Fallback and unavailable prices cannot trigger a target status.
 
 "use client";
 
@@ -37,94 +21,182 @@ interface AlertCardProps {
 
 const NEAR_THRESHOLD_PERCENT = 15;
 
-export default function AlertCard({ alert, onDelete }: AlertCardProps) {
-  const hasPrice = alert.currentPrice > 0;
+export default function AlertCard({
+  alert,
+  onDelete,
+}: AlertCardProps) {
+  const hasQuote =
+    alert.currentPrice !== null &&
+    alert.priceStatus !== "unavailable";
 
-  // "Hit" = current price has crossed the target.
-  // "Near" = within 15% of the target on the approach side, and not hit.
+  const hasLivePrice =
+    alert.priceStatus === "live" &&
+    alert.currentPrice !== null;
+
+  // Only enabled alerts with live quotes are eligible for evaluation.
+  const canEvaluate =
+    alert.enabled && hasLivePrice;
+
   const isHit =
-    hasPrice &&
+    canEvaluate &&
     (alert.condition === "above"
-      ? alert.currentPrice >= alert.targetPrice
-      : alert.currentPrice <= alert.targetPrice);
+      ? alert.currentPrice! >= alert.targetPrice
+      : alert.currentPrice! <= alert.targetPrice);
 
-  const distancePercent = hasPrice
-    ? alert.condition === "above"
-      ? ((alert.targetPrice - alert.currentPrice) / alert.currentPrice) * 100
-      : ((alert.currentPrice - alert.targetPrice) / alert.currentPrice) * 100
-    : 100;
+  let distancePercent: number | null = null;
+
+  // Calculate distance only when division is safe.
+  if (canEvaluate && alert.currentPrice! > 0) {
+    distancePercent =
+      alert.condition === "above"
+        ? ((alert.targetPrice - alert.currentPrice!) /
+            alert.currentPrice!) *
+          100
+        : ((alert.currentPrice! - alert.targetPrice) /
+            alert.currentPrice!) *
+          100;
+  }
 
   const isNear =
-    !isHit && distancePercent > 0 && distancePercent < NEAR_THRESHOLD_PERCENT;
+    canEvaluate &&
+    !isHit &&
+    distancePercent !== null &&
+    Number.isFinite(distancePercent) &&
+    distancePercent > 0 &&
+    distancePercent < NEAR_THRESHOLD_PERCENT;
 
   const handleToggle = () => {
     const formData = new FormData();
+
     formData.set("alertId", alert.id);
     formData.set("enabled", String(!alert.enabled));
+
     void toggleAlert(formData);
   };
 
   return (
     <Card
       hover
-      className={`flex flex-col ${!alert.enabled ? "opacity-60" : ""}`}
+      className={`flex flex-col ${
+        !alert.enabled ? "opacity-60" : ""
+      }`}
     >
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-3 min-w-0">
-          <CoinLogo src={alert.logoUrl} alt={alert.symbol} size="lg" />
+      <div className="mb-4 flex items-start justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <CoinLogo
+            src={alert.logoUrl}
+            alt={alert.symbol}
+            size="lg"
+          />
+
           <div className="min-w-0">
-            <p className="text-sm font-medium text-text truncate">
+            <p className="truncate text-sm font-medium text-text">
               {alert.coinName || alert.symbol}
             </p>
-            <p className="text-xs text-secondary">{alert.symbol}</p>
+            <p className="text-xs text-secondary">
+              {alert.symbol}
+            </p>
           </div>
         </div>
+
         <button
+          type="button"
           onClick={() => onDelete(alert)}
-          className="text-secondary hover:text-danger transition-colors text-sm flex-shrink-0"
+          className="flex-shrink-0 text-sm text-secondary transition-colors hover:text-danger"
           aria-label={`Delete alert for ${alert.symbol}`}
         >
           🗑
         </button>
       </div>
 
-      <div className="space-y-2 mb-4">
+      <div className="mb-4 space-y-2">
         <p className="text-sm text-secondary">
-          Notify when price {alert.condition === "above" ? "rises above" : "falls below"}
+          Notify condition: price{" "}
+          {alert.condition === "above"
+            ? "rises above"
+            : "falls below"}
         </p>
+
         <p className="text-lg font-bold text-text">
           {formatPrice(alert.targetPrice)}
         </p>
-        {hasPrice && (
-          <div className="flex items-center gap-2 flex-wrap">
+
+        {hasQuote ? (
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-secondary">
-              Current: {formatPrice(alert.currentPrice)}
+              {alert.priceStatus === "fallback"
+                ? `Indicative price: ≈ ${formatPrice(alert.currentPrice!)}`
+                : `Current: ${formatPrice(alert.currentPrice!)}`}
             </span>
-            <Badge
-              variant={alert.change24h >= 0 ? "success" : "danger"}
-              size="sm"
-            >
-              {formatPercent(alert.change24h)}
-            </Badge>
-            {isHit && <Badge variant="success">🎯 Target hit</Badge>}
-            {isNear && <Badge variant="warning">Near target</Badge>}
+
+            {alert.priceStatus === "live" &&
+              alert.change24h !== null && (
+                <Badge
+                  variant={
+                    alert.change24h >= 0 ? "success" : "danger"
+                  }
+                  size="sm"
+                >
+                  {formatPercent(alert.change24h)}
+                </Badge>
+              )}
+
+            {alert.priceStatus === "fallback" && (
+              <Badge variant="warning" size="sm">
+                Fallback data
+              </Badge>
+            )}
+
+            {canEvaluate && isHit && (
+              <Badge variant="success">
+                🎯 Target hit
+              </Badge>
+            )}
+
+            {canEvaluate && isNear && (
+              <Badge variant="warning">
+                Near target
+              </Badge>
+            )}
+
+            {alert.priceStatus === "fallback" &&
+              alert.enabled && (
+                <span className="w-full text-xs text-secondary">
+                  Target status unavailable until a live quote is returned.
+                </span>
+              )}
           </div>
+        ) : (
+          <p className="text-xs text-secondary">
+            Current price unavailable. Target status cannot be evaluated.
+          </p>
+        )}
+
+        {!alert.enabled && (
+          <p className="text-xs text-secondary">
+            This alert is paused. Its target is not being evaluated.
+          </p>
         )}
       </div>
 
-      <div className="mt-auto pt-4 border-t border-white/5 flex items-center justify-between">
+      <div className="mt-auto flex items-center justify-between border-t border-white/5 pt-4">
         <span className="text-xs text-secondary">
           {alert.enabled ? "Active" : "Paused"}
         </span>
+
         <button
+          type="button"
           onClick={handleToggle}
-          className={`relative w-11 h-6 rounded-full transition-colors ${
+          className={`relative h-6 w-11 rounded-full transition-colors ${
             alert.enabled ? "bg-primary" : "bg-white/10"
           }`}
-          aria-label={alert.enabled ? "Pause alert" : "Resume alert"}
+          aria-label={
+            alert.enabled ? "Pause alert" : "Resume alert"
+          }
+          aria-pressed={alert.enabled}
         >
           <span
-            className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
+            className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
               alert.enabled ? "translate-x-5" : "translate-x-0"
             }`}
           />

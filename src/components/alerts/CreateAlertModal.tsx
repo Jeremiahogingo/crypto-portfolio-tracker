@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useActionState, useState } from "react";
@@ -22,26 +21,36 @@ export default function CreateAlertModal({
   isOpen,
   onClose,
 }: CreateAlertModalProps) {
-  const { coins, isLoading } = useMarkets({ per_page: 100 });
+  const { coins, meta, isLoading } = useMarkets({ per_page: 100 });
 
   const [coinId, setCoinId] = useState("");
-  const [condition, setCondition] = useState<"above" | "below">("above");
+  const [condition, setCondition] =
+    useState<"above" | "below">("above");
 
-  // null means the user has not manually entered a target price.
-  const [targetPriceOverride, setTargetPriceOverride] = useState<
-    string | null
-  >(null);
+  const [targetPriceOverride, setTargetPriceOverride] =
+    useState<string | null>(null);
 
   const selectedCoin = coins.find((coin) => coin.id === coinId);
 
-  // Derive the suggested target rather than synchronizing it with an effect.
-  const suggestedTargetPrice = selectedCoin
-    ? (
-        selectedCoin.price * (condition === "above" ? 1.2 : 0.8)
-      ).toFixed(2)
-    : "";
+  // Do not derive a suggested alert target from fallback or unavailable data.
+  const selectedLivePrice =
+    meta?.source === "live" &&
+    selectedCoin !== undefined &&
+    selectedCoin.price !== null &&
+    selectedCoin.price > 0
+      ? selectedCoin.price
+      : null;
 
-  const targetPrice = targetPriceOverride ?? suggestedTargetPrice;
+  const suggestedTargetPrice =
+    selectedLivePrice === null
+      ? ""
+      : (
+          selectedLivePrice *
+          (condition === "above" ? 1.2 : 0.8)
+        ).toFixed(2);
+
+  const targetPrice =
+    targetPriceOverride ?? suggestedTargetPrice;
 
   const resetForm = () => {
     setCoinId("");
@@ -73,9 +82,21 @@ export default function CreateAlertModal({
     setTargetPriceOverride(null);
   };
 
-  const handleConditionChange = (nextCondition: "above" | "below") => {
+  const handleConditionChange = (
+    nextCondition: "above" | "below"
+  ) => {
     setCondition(nextCondition);
     setTargetPriceOverride(null);
+  };
+
+  const getCoinPriceLabel = (price: number | null) => {
+    if (price === null) {
+      return "Price unavailable";
+    }
+
+    return meta?.source === "live"
+      ? formatPrice(price)
+      : `≈ ${formatPrice(price)} (fallback)`;
   };
 
   return (
@@ -90,7 +111,7 @@ export default function CreateAlertModal({
         <input type="hidden" name="condition" value={condition} />
 
         <div>
-          <label className="block text-xs font-medium text-secondary mb-2">
+          <label className="mb-2 block text-xs font-medium text-secondary">
             Coin
           </label>
 
@@ -101,13 +122,14 @@ export default function CreateAlertModal({
               value={coinId}
               onChange={(event) => handleCoinChange(event.target.value)}
               required
-              className="w-full bg-surface border border-white/10 rounded-lg px-3 py-2 text-sm text-text focus:outline-none focus:border-primary"
+              className="w-full rounded-lg border border-white/10 bg-surface px-3 py-2 text-sm text-text focus:border-primary focus:outline-none"
             >
               <option value="">Select a coin…</option>
 
               {coins.map((coin) => (
                 <option key={coin.id} value={coin.id}>
-                  {coin.symbol} — {coin.name} ({formatPrice(coin.price)})
+                  {coin.symbol} — {coin.name} (
+                  {getCoinPriceLabel(coin.price)})
                 </option>
               ))}
             </select>
@@ -115,27 +137,38 @@ export default function CreateAlertModal({
         </div>
 
         {selectedCoin && (
-          <div className="flex items-center gap-3 p-3 bg-white/[0.02] border border-white/5 rounded-lg">
+          <div className="flex items-center gap-3 rounded-lg border border-white/5 bg-white/[0.02] p-3">
             <CoinLogo
               src={selectedCoin.logoUrl}
               alt={selectedCoin.name}
               size="md"
             />
 
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-text truncate">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-text">
                 {selectedCoin.name}
               </p>
 
               <p className="text-xs text-secondary">
-                Current price: {formatPrice(selectedCoin.price)}
+                {selectedCoin.price === null
+                  ? "Current market price unavailable."
+                  : meta?.source === "live"
+                    ? `Current price: ${formatPrice(selectedCoin.price)}`
+                    : `Indicative fallback price: ${formatPrice(selectedCoin.price)}`}
               </p>
             </div>
           </div>
         )}
 
+        {selectedCoin && selectedLivePrice === null && (
+          <p className="rounded-lg border border-warning/20 bg-warning/10 px-3 py-2 text-xs text-warning">
+            A live price is not available for this coin. Enter your alert
+            target manually; fallback data is not used to suggest a target.
+          </p>
+        )}
+
         <div>
-          <label className="block text-xs font-medium text-secondary mb-2">
+          <label className="mb-2 block text-xs font-medium text-secondary">
             Condition
           </label>
 
@@ -143,10 +176,10 @@ export default function CreateAlertModal({
             <button
               type="button"
               onClick={() => handleConditionChange("above")}
-              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                 condition === "above"
                   ? "bg-primary text-white"
-                  : "bg-surface border border-white/10 text-secondary"
+                  : "border border-white/10 bg-surface text-secondary"
               }`}
             >
               Price above
@@ -155,10 +188,10 @@ export default function CreateAlertModal({
             <button
               type="button"
               onClick={() => handleConditionChange("below")}
-              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                 condition === "below"
                   ? "bg-primary text-white"
-                  : "bg-surface border border-white/10 text-secondary"
+                  : "border border-white/10 bg-surface text-secondary"
               }`}
             >
               Price below
@@ -167,7 +200,7 @@ export default function CreateAlertModal({
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-secondary mb-2">
+          <label className="mb-2 block text-xs font-medium text-secondary">
             Target price (USD)
           </label>
 
@@ -182,22 +215,22 @@ export default function CreateAlertModal({
               setTargetPriceOverride(event.target.value)
             }
             placeholder="Enter target"
-            className="w-full bg-surface border border-white/10 rounded-lg px-3 py-2 text-sm text-text placeholder-secondary focus:outline-none focus:border-primary"
+            className="w-full rounded-lg border border-white/10 bg-surface px-3 py-2 text-sm text-text placeholder-secondary focus:border-primary focus:outline-none"
           />
 
-          <p className="text-xs text-secondary mt-1">
-            You&apos;ll see a &quot;Target hit&quot; badge when this price is
-            crossed.
+          <p className="mt-1 text-xs text-secondary">
+            The target status is evaluated from a verified live market quote.
+            Alerts do not currently deliver email or push notifications.
           </p>
         </div>
 
         {state && "error" in state && (
-          <div className="text-xs text-danger bg-danger/10 border border-danger/20 rounded-lg px-3 py-2">
+          <div className="rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-xs text-danger">
             {state.error}
           </div>
         )}
 
-        <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/5">
+        <div className="flex items-center justify-end gap-3 border-t border-white/5 pt-4">
           <Button
             type="button"
             variant="secondary"
