@@ -1,65 +1,89 @@
-// src/app/api/crypto/markets/route.ts
-//
-// GET /api/crypto/markets?vs_currency=usd&per_page=100&page=1&ids=bitcoin,ethereum&sparkline=true
-//
-// Fronts CoinGecko's /coins/markets endpoint. Returns normalized MarketCoin
-// data with a meta envelope indicating whether live or fallback data was
-// served. Never throws — on any CoinGecko failure we return fallback data
-// so the UI stays functional.
+
+/**
+ * src/app/api/crypto/markets/route.ts
+ *
+ * GET /api/crypto/markets
+ *
+ * Public market-data endpoint.
+ *
+ * Validates all user-controlled query parameters before calling CoinGecko.
+ */
 
 import { NextRequest, NextResponse } from "next/server";
-import { CoinGeckoError, getMarkets } from "@/lib/api/coingecko";
-import { normalizeCoin } from "@/lib/api/normalize";
-import { fallbackMarkets } from "@/mock/api/fallback";
-import type { ApiResponse, MarketCoin } from "@/types/market";
 
-// Cache the route output for 60s. Combined with the fetch-level revalidate
-// inside the client, this keeps origin calls well under CoinGecko's limits
-// even under moderate traffic.
+import {
+  CoinGeckoError,
+  getMarkets,
+} from "@/lib/api/coingecko";
+
+import { normalizeCoin } from "@/lib/api/normalize";
+import { parseMarketsQuery } from "@/lib/api/route-validation";
+
+import { fallbackMarkets } from "@/mock/api/fallback";
+
+import type {
+  ApiResponse,
+  MarketCoin,
+} from "@/types/market";
+
+// Revalidate market responses every 60 seconds.
 export const revalidate = 60;
 
-export async function GET(req: NextRequest): Promise<NextResponse<ApiResponse<MarketCoin[]>>> {
-  const { searchParams } = new URL(req.url);
+export async function GET(
+  request: NextRequest
+): Promise<NextResponse> {
+  const parsed = parseMarketsQuery(
+    request.nextUrl.searchParams
+  );
 
-  // Bound `per_page` to CoinGecko's documented maximum to prevent abuse.
-  const perPage = Math.min(Math.max(Number(searchParams.get("per_page") ?? 100), 1), 250);
-  const page = Math.max(Number(searchParams.get("page") ?? 1), 1);
-  const vsCurrency = searchParams.get("vs_currency") ?? "usd";
-  const ids = searchParams.get("ids")?.split(",").filter(Boolean);
-  const sparkline = searchParams.get("sparkline") === "true";
+  if (!parsed.success) {
+    return NextResponse.json(
+      {
+        error: parsed.error,
+      },
+      {
+        status: 400,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      }
+    );
+  }
 
   try {
-    const raw = await getMarkets({
-      vs_currency: vsCurrency,
-      per_page: perPage,
-      page,
-      ids,
-      sparkline,
-    });
+    const raw = await getMarkets(parsed.data);
     const data = raw.map(normalizeCoin);
 
-    return NextResponse.json({
+    const response: ApiResponse<MarketCoin[]> = {
       data,
       meta: {
         source: "live",
         fetchedAt: new Date().toISOString(),
         count: data.length,
       },
-    });
-  } catch (err) {
-    const e = err as CoinGeckoError;
+    };
+
+    return NextResponse.json(response);
+  } catch (error) {
+    const status =
+      error instanceof CoinGeckoError
+        ? error.status
+        : undefined;
+
     console.warn(
-      `[api/crypto/markets] falling back to mock data: ${e.message}`,
-      e.status ? `(status ${e.status})` : ""
+      "[api/crypto/markets] upstream failure; serving fallback",
+      { status }
     );
 
-    return NextResponse.json({
+    const response: ApiResponse<MarketCoin[]> = {
       data: fallbackMarkets,
       meta: {
         source: "fallback",
         fetchedAt: new Date().toISOString(),
         count: fallbackMarkets.length,
       },
-    });
+    };
+
+    return NextResponse.json(response);
   }
 }

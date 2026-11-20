@@ -1,57 +1,93 @@
-// src/app/api/crypto/news/route.ts
-//
-// GET /api/crypto/news?limit=30
-//
-// Aggregates news from all RSS sources via getNews(), wraps it in the
-// standard ApiResponse envelope, and falls back to local mock articles if
-// every upstream source is unreachable.
-//
-// The fallback keeps the dashboard "Market News" widget and the News page
-// functional during development offline or during an upstream outage.
-// Because the response shape is identical, the UI needs no error branch.
+
+/**
+ * src/app/api/crypto/news/route.ts
+ *
+ * GET /api/crypto/news?limit=30
+ *
+ * Public aggregated RSS/Atom news endpoint.
+ */
 
 import { NextRequest, NextResponse } from "next/server";
+
 import { getNews } from "@/lib/api/news";
+
+import {
+  parseNewsQuery,
+  sanitizeHttpsUrl,
+} from "@/lib/api/route-validation";
+
 import { fallbackNews } from "@/mock/api/newsFallback";
+
 import type { ApiResponse } from "@/types/market";
 import type { NewsArticle } from "@/types/news";
 
-// Route-level cache: at most one aggregation per 5 minutes per server
-// instance, regardless of user count. Matches the fetch-level revalidate
-// inside getNews() — both layers are needed (see Step 3.3 design notes).
+// Revalidate news every five minutes.
 export const revalidate = 300;
 
+/**
+ * Fallback articles are local data, but their URLs still pass through
+ * the same HTTPS validation used for external RSS content.
+ */
+const safeFallbackNews: NewsArticle[] = fallbackNews
+  .map((article) => ({
+    ...article,
+    url: sanitizeHttpsUrl(article.url) ?? "",
+    imageUrl: sanitizeHttpsUrl(article.imageUrl),
+  }))
+  .filter((article) => article.url.length > 0);
+
 export async function GET(
-  req: NextRequest
-): Promise<NextResponse<ApiResponse<NewsArticle[]>>> {
-  const { searchParams } = new URL(req.url);
-  const limit = Math.min(Math.max(Number(searchParams.get("limit") ?? 30), 1), 50);
+  request: NextRequest
+): Promise<NextResponse> {
+  const parsed = parseNewsQuery(
+    request.nextUrl.searchParams
+  );
+
+  if (!parsed.success) {
+    return NextResponse.json(
+      {
+        error: parsed.error,
+      },
+      {
+        status: 400,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      }
+    );
+  }
+
+  const { limit } = parsed.data;
 
   try {
     const articles = await getNews({ limit });
 
-    return NextResponse.json({
+    const response: ApiResponse<NewsArticle[]> = {
       data: articles,
       meta: {
         source: "live",
         fetchedAt: new Date().toISOString(),
         count: articles.length,
       },
-    });
-  } catch (err) {
+    };
+
+    return NextResponse.json(response);
+  } catch {
     console.warn(
-      `[api/crypto/news] all sources failed, serving fallback: ${
-        (err as Error).message
-      }`
+      "[api/crypto/news] all RSS sources failed; serving fallback"
     );
 
-    return NextResponse.json({
-      data: fallbackNews.slice(0, limit),
+    const data = safeFallbackNews.slice(0, limit);
+
+    const response: ApiResponse<NewsArticle[]> = {
+      data,
       meta: {
         source: "fallback",
         fetchedAt: new Date().toISOString(),
-        count: Math.min(limit, fallbackNews.length),
+        count: data.length,
       },
-    });
+    };
+
+    return NextResponse.json(response);
   }
 }

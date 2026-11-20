@@ -1,21 +1,50 @@
-// src/lib/api/news.ts
+
+/**
+ * src/lib/api/news.ts
+ *
+ * Server-side RSS and Atom news aggregation.
+ *
+ * Security:
+ * - Only fixed, trusted RSS source URLs are requested.
+ * - Every feed request has an eight-second timeout.
+ * - Response bodies are bounded to prevent oversized feed processing.
+ * - XML entity expansion has explicit limits.
+ * - Article and image URLs must use HTTPS.
+ * - Feed HTML is converted to plain text before reaching the UI.
+ *
+ * Reliability:
+ * - Individual source failures do not interrupt successful feeds.
+ * - Successful articles are deduplicated by URL.
+ * - Articles are sorted by publication date.
+ */
+
+import "server-only";
 
 import { XMLParser } from "fast-xml-parser";
+
 import type { NewsArticle } from "@/types/news";
 
+import { sanitizeHttpsUrl } from "@/lib/api/route-validation";
+
+// --------------------------------------------------
+// Limits
+// --------------------------------------------------
+
+const FEED_TIMEOUT_MS = 8_000;
+const MAX_FEED_BYTES = 2 * 1024 * 1024;
+const MAX_ARTICLE_LIMIT = 50;
+const MAX_DESCRIPTION_LENGTH = 400;
+
+// --------------------------------------------------
+// RSS sources
+// --------------------------------------------------
+
 interface FeedSource {
-  /** Display name shown on the article card. */
   name: string;
-  /** RSS or Atom URL. */
   url: string;
-  /** Default category when the feed doesn't provide a usable one. */
   defaultCategory: string;
 }
 
-/**
- * Ordered by editorial weight. Articles are deduplicated by URL and sorted
- * by publication date, so source order only matters for tie-breaking.
- */
 const SOURCES: FeedSource[] = [
   {
     name: "CoinDesk",
@@ -34,19 +63,37 @@ const SOURCES: FeedSource[] = [
   },
 ];
 
+// --------------------------------------------------
+// XML parser
+// --------------------------------------------------
+
+// --------------------------------------------------
+// XML parser
+// --------------------------------------------------
+
 const parser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: "@_",
-  processEntities: true,
+
+  processEntities: {
+    enabled: true,
+    maxEntitySize: 1_024,
+    maxTotalExpansions: 1_000,
+    maxExpandedLength: 100_000,
+    maxEntityCount: 100,
+  },
 });
 
+// --------------------------------------------------
+// XML structure helpers
+// --------------------------------------------------
+
 /**
- * Narrow an unknown XML parser value to a plain object record.
- *
- * XML feeds contain inconsistent structures, so callers should not assume
- * that a parsed element is always an object.
+ * Narrow an unknown XML value into a plain object record.
  */
-function asRecord(value: unknown): Record<string, unknown> | undefined {
+function asRecord(
+  value: unknown
+): Record<string, unknown> | undefined {
   if (
     typeof value !== "object" ||
     value === null ||
@@ -58,9 +105,14 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value as Record<string, unknown>;
 }
 
+// --------------------------------------------------
+// Text normalization
+// --------------------------------------------------
+
 /**
- * Strip HTML tags and collapse whitespace. RSS descriptions are frequently
- * inconsistent, so plain text is the only safe input for the UI.
+ * Remove HTML markup and collapse whitespace.
+ *
+ * The final string is rendered by React as text, not injected as HTML.
  */
 function stripHtml(input: string): string {
   return input
@@ -75,11 +127,14 @@ function stripHtml(input: string): string {
     .trim();
 }
 
-/**
- * Normalize RSS pubDate and Atom updated/published dates into ISO strings.
- */
+// --------------------------------------------------
+// Date normalization
+// --------------------------------------------------
+
 function toIsoDate(value: unknown): string {
-  if (typeof value !== "string") return new Date().toISOString();
+  if (typeof value !== "string") {
+    return new Date().toISOString();
+  }
 
   const date = new Date(value);
 
@@ -88,31 +143,41 @@ function toIsoDate(value: unknown): string {
     : date.toISOString();
 }
 
+// --------------------------------------------------
+// Article ID generation
+// --------------------------------------------------
+
 /**
- * Derive a deterministic ID from the article URL.
- * URL-based deduplication remains the primary collision safeguard.
+ * Generate a deterministic identifier from an article URL.
+ *
+ * URL deduplication remains the primary duplicate safeguard.
  */
 function idFromUrl(url: string): string {
   let hash = 0;
 
-  for (let i = 0; i < url.length; i++) {
-    hash = (hash << 5) - hash + url.charCodeAt(i);
+  for (let index = 0; index < url.length; index++) {
+    hash = (hash << 5) - hash + url.charCodeAt(index);
     hash |= 0;
   }
 
   return Math.abs(hash).toString(36);
 }
 
-/**
- * Extract the first usable image URL from common RSS/Atom fields.
- */
-function extractImage(item: Record<string, unknown>): string | undefined {
+// --------------------------------------------------
+// Image extraction
+// --------------------------------------------------
+
+function extractImage(
+  item: Record<string, unknown>
+): string | undefined {
   const media = asRecord(item["media:content"]);
+
   if (typeof media?.["@_url"] === "string") {
     return media["@_url"];
   }
 
   const thumbnail = asRecord(item["media:thumbnail"]);
+
   if (typeof thumbnail?.["@_url"] === "string") {
     return thumbnail["@_url"];
   }
@@ -129,9 +194,12 @@ function extractImage(item: Record<string, unknown>): string | undefined {
 
   const image = item.image;
 
-  if (typeof image === "string") return image;
+  if (typeof image === "string") {
+    return image;
+  }
 
   const imageRecord = asRecord(image);
+
   if (typeof imageRecord?.["@_href"] === "string") {
     return imageRecord["@_href"];
   }
@@ -139,71 +207,106 @@ function extractImage(item: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
-/**
- * Extract RSS string categories or Atom category term attributes.
- */
+// --------------------------------------------------
+// Category extraction
+// --------------------------------------------------
+
 function extractCategory(
   item: Record<string, unknown>,
   fallback: string
 ): string {
   const raw = item.category;
-  if (!raw) return fallback;
 
-  const categories = Array.isArray(raw) ? raw : [raw];
+  if (!raw) {
+    return fallback;
+  }
+
+  const categories = Array.isArray(raw)
+    ? raw
+    : [raw];
 
   for (const entry of categories) {
     if (typeof entry === "string" && entry.trim()) {
-      return entry.trim();
+      return entry.trim().slice(0, 80);
     }
 
     const categoryRecord = asRecord(entry);
     const term = categoryRecord?.["@_term"];
 
     if (typeof term === "string" && term.trim()) {
-      return term.trim();
+      return term.trim().slice(0, 80);
     }
   }
 
   return fallback;
 }
 
+// --------------------------------------------------
+// Article URL extraction
+// --------------------------------------------------
+
 /**
- * Extract RSS text links and Atom link href attributes.
- * Some Atom feeds provide multiple links, such as self and alternate.
+ * Extract an RSS or Atom article link.
+ *
+ * For Atom feeds, prefer rel="alternate" rather than self links.
  */
-function extractUrl(item: Record<string, unknown>): string | undefined {
-  const link = item.link;
+function extractUrl(
+  item: Record<string, unknown>
+): string | undefined {
+  const raw = item.link;
 
-  // RSS 2.0: <link>https://example.com/article</link>
-  if (typeof link === "string") return link;
-
-  // Atom feeds may contain an array of link elements.
-  if (Array.isArray(link)) {
-    for (const entry of link) {
-      if (typeof entry === "string") return entry;
-
-      const linkRecord = asRecord(entry);
-      const href = linkRecord?.["@_href"];
-
-      if (typeof href === "string") return href;
-    }
+  if (typeof raw === "string") {
+    return raw;
   }
 
-  // Atom feeds may contain a single link element.
-  const linkRecord = asRecord(link);
-  const href = linkRecord?.["@_href"];
+  const entries = Array.isArray(raw)
+    ? raw
+    : raw
+      ? [raw]
+      : [];
 
-  return typeof href === "string" ? href : undefined;
+  let fallback: string | undefined;
+
+  for (const entry of entries) {
+    if (typeof entry === "string") {
+      return entry;
+    }
+
+    const linkRecord = asRecord(entry);
+    const href = linkRecord?.["@_href"];
+
+    if (typeof href !== "string") {
+      continue;
+    }
+
+    const relation = linkRecord?.["@_rel"];
+
+    if (
+      relation === undefined ||
+      relation === "alternate"
+    ) {
+      return href;
+    }
+
+    fallback ??= href;
+  }
+
+  return fallback;
 }
 
+// --------------------------------------------------
+// Feed parsing
+// --------------------------------------------------
+
 /**
- * Convert one RSS/Atom document into normalized NewsArticle records.
+ * Convert one RSS 2.0 or Atom document into NewsArticle records.
  *
- * Supports both RSS 2.0 (rss.channel.item) and Atom (feed.entry).
- * Unexpected structures return an empty array instead of failing the
- * aggregation process.
+ * Invalid structures and unsafe article URLs are skipped.
  */
-function parseFeed(xml: string, source: FeedSource): NewsArticle[] {
+function parseFeed(
+  xml: string,
+  source: FeedSource
+): NewsArticle[] {
   let doc: Record<string, unknown>;
 
   try {
@@ -212,10 +315,11 @@ function parseFeed(xml: string, source: FeedSource): NewsArticle[] {
     return [];
   }
 
-  // Narrow the nested XML structures before reading their properties.
-  const rssChannel = asRecord(asRecord(doc.rss)?.channel);
-  const rssItems = rssChannel?.item;
+  const rssChannel = asRecord(
+    asRecord(doc.rss)?.channel
+  );
 
+  const rssItems = rssChannel?.item;
   const atomEntries = asRecord(doc.feed)?.entry;
 
   const rawItems: unknown[] = Array.isArray(rssItems)
@@ -230,40 +334,68 @@ function parseFeed(xml: string, source: FeedSource): NewsArticle[] {
 
   for (const raw of rawItems) {
     const item = asRecord(raw);
-    if (!item) continue;
 
-    const url = extractUrl(item);
-    const title = stripHtml(String(item.title ?? ""));
+    if (!item) {
+      continue;
+    }
 
-    if (!url || !title) continue;
+    const rawUrl = extractUrl(item);
+    const url = sanitizeHttpsUrl(rawUrl);
+
+    // Do not expose unsafe or malformed external links.
+    if (!url) {
+      continue;
+    }
+
+    const title = stripHtml(
+      typeof item.title === "string"
+        ? item.title
+        : String(item.title ?? "")
+    );
+
+    if (!title) {
+      continue;
+    }
 
     const rawDescription =
-      item.description ?? item.summary ?? item.content ?? "";
+      item.description ??
+      item.summary ??
+      item.content ??
+      "";
 
     const description = stripHtml(
       typeof rawDescription === "string"
         ? rawDescription
         : String(rawDescription)
-    ).slice(0, 400);
+    ).slice(0, MAX_DESCRIPTION_LENGTH);
 
     const publishedAt = toIsoDate(
-      item.pubDate ?? item.published ?? item.updated ?? item.date
+      item.pubDate ??
+      item.published ??
+      item.updated ??
+      item.date
     );
+
+    const rawImageUrl = extractImage(item);
+    const imageUrl = sanitizeHttpsUrl(rawImageUrl);
 
     articles.push({
       id: idFromUrl(url),
-      title,
+      title: title.slice(0, 300),
       description,
       url,
       source: source.name,
       publishedAt,
-      imageUrl: extractImage(item),
-      category: extractCategory(item, source.defaultCategory),
+      imageUrl,
+      category: extractCategory(
+        item,
+        source.defaultCategory
+      ),
       author:
         typeof item.author === "string"
-          ? item.author
+          ? item.author.slice(0, 120)
           : typeof item["dc:creator"] === "string"
-            ? item["dc:creator"]
+            ? item["dc:creator"].slice(0, 120)
             : undefined,
     });
   }
@@ -271,15 +403,88 @@ function parseFeed(xml: string, source: FeedSource): NewsArticle[] {
   return articles;
 }
 
+// --------------------------------------------------
+// Bounded feed reading
+// --------------------------------------------------
+
+/**
+ * Read an upstream response without allowing an oversized XML body.
+ */
+async function readLimitedFeed(
+  response: Response,
+  sourceName: string
+): Promise<string> {
+  const lengthHeader = response.headers.get("content-length");
+
+  if (lengthHeader) {
+    const declaredLength = Number(lengthHeader);
+
+    if (
+      Number.isFinite(declaredLength) &&
+      declaredLength > MAX_FEED_BYTES
+    ) {
+      throw new Error(`${sourceName} feed exceeds the size limit`);
+    }
+  }
+
+  if (!response.body) {
+    return "";
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (done) {
+        break;
+      }
+
+      totalBytes += value.byteLength;
+
+      if (totalBytes > MAX_FEED_BYTES) {
+        await reader.cancel().catch(() => undefined);
+
+        throw new Error(
+          `${sourceName} feed exceeds the size limit`
+        );
+      }
+
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+
+  let offset = 0;
+
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  return new TextDecoder().decode(bytes);
+}
+
+// --------------------------------------------------
+// Public news API
+// --------------------------------------------------
+
 export interface GetNewsOptions {
   /** Maximum articles returned after aggregation and deduplication. */
   limit?: number;
 }
 
 /**
- * Fetch, parse, deduplicate, and sort news from all registered sources.
+ * Fetch, parse, deduplicate and sort articles from registered RSS sources.
  *
- * Individual source failures do not interrupt successful feeds.
+ * Individual source failures do not interrupt successful sources.
  * The function throws only when every source fails.
  */
 export async function getNews(
@@ -287,22 +492,42 @@ export async function getNews(
 ): Promise<NewsArticle[]> {
   const limit = options.limit ?? 30;
 
+  if (
+    !Number.isInteger(limit) ||
+    limit < 1 ||
+    limit > MAX_ARTICLE_LIMIT
+  ) {
+    throw new RangeError(
+      `News limit must be an integer between 1 and ${MAX_ARTICLE_LIMIT}`
+    );
+  }
+
   const results = await Promise.allSettled(
     SOURCES.map(async (source) => {
       const response = await fetch(source.url, {
         headers: {
-          "user-agent": "CryptoTracker/1.0 (+https://example.com)",
+          "user-agent": "CryptoPortfolioTracker/1.0",
           accept:
             "application/rss+xml, application/atom+xml, application/xml, text/xml",
         },
-        next: { revalidate: 300 },
+
+        signal: AbortSignal.timeout(FEED_TIMEOUT_MS),
+
+        next: {
+          revalidate: 300,
+        },
       });
 
       if (!response.ok) {
-        throw new Error(`${source.name} responded ${response.status}`);
+        throw new Error(
+          `${source.name} responded with HTTP ${response.status}`
+        );
       }
 
-      const xml = await response.text();
+      const xml = await readLimitedFeed(
+        response,
+        source.name
+      );
 
       return parseFeed(xml, source);
     })
@@ -316,10 +541,17 @@ export async function getNews(
     throw new Error("All news sources failed");
   }
 
-  // Preserve partial results while recording failed sources for observability.
+  // Log source failures without dumping response bodies or sensitive data.
   for (const failure of failures) {
     if (failure.status === "rejected") {
-      console.warn(`[news] source failed: ${failure.reason}`);
+      const reason = failure.reason;
+
+      console.warn("[news] RSS source failed", {
+        errorName:
+          reason instanceof Error
+            ? reason.name
+            : "UnknownError",
+      });
     }
   }
 
