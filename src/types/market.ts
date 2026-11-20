@@ -2,56 +2,48 @@
 //
 // Domain types exposed to the client.
 //
-// These are the ONLY types UI components should import for crypto data.
-// The CoinGecko-specific shapes in @/types/coingecko are internal to the
-// server-side API client and should never leak into client code.
+// CoinGecko-specific response shapes remain inside the server-side API
+// adapter. These normalized types are shared by the API and UI.
 //
-// Field naming follows camelCase because that's what the React components
-// expect. All numeric fields are non-nullable — the normalizer fills in
-// sensible defaults (usually 0) for the rare cases where CoinGecko returns
-// null, so downstream code doesn't need null checks.
+// Important financial rule:
+// A missing market quote is represented by null, not zero.
+// A provider-supplied numeric zero remains a valid price.
 
-/**
- * A single coin as shown on Markets, Watchlist, and Portfolio tables.
- */
 export interface MarketCoin {
-  id: string;                 // CoinGecko slug, e.g. "bitcoin"
-  symbol: string;             // Uppercase ticker, e.g. "BTC"
-  name: string;               // Display name, e.g. "Bitcoin"
-
-  /**
-   * Logo image URL from CoinGecko's CDN.
-   * In fallback data this may be a single emoji character instead of a URL —
-   * renderers should check `logoUrl.startsWith("http")` to decide whether
-   * to emit an <img> or a text node.
-   */
+  id: string;
+  symbol: string;
+  name: string;
   logoUrl: string;
 
-  price: number;
-  change24h: number;          // percentage, e.g. -2.4
+  /** Null means CoinGecko did not provide a valid price. */
+  price: number | null;
+
+  /** Null means the 24-hour percentage change is unavailable. */
+  change24h: number | null;
+
   marketCap: number;
   volume24h: number;
-  rank: number;               // market_cap_rank
+  rank: number;
 
-  /** 7-day price array (168 hourly points). Only present if requested. */
+  /** Seven-day price array (168 hourly points), when requested. */
   sparkline?: number[];
 }
 
-/**
- * Aggregate market statistics shown in the Markets overview cards.
- */
+/** Aggregate market statistics shown in the Markets overview. */
 export interface GlobalMarketStats {
   totalMarketCap: number;
   totalVolume: number;
-  btcDominance: number;        // percentage, e.g. 52.3
+  btcDominance: number;
   ethDominance: number;
   activeCoins: number;
-  marketCapChange24h: number;  // percentage
+  marketCapChange24h: number;
 }
 
 /**
- * A coin in the Trending rail. Distinct from MarketCoin because CoinGecko's
- * /search/trending endpoint returns a different, smaller shape.
+ * A coin in the Trending rail.
+ *
+ * This is distinct from MarketCoin because the trending endpoint returns
+ * a smaller response shape. Its existing numeric price contract is retained.
  */
 export interface TrendingCoin {
   id: string;
@@ -63,19 +55,12 @@ export interface TrendingCoin {
   change24h: number;
 }
 
-/**
- * Envelope returned by every /api/crypto/* route.
- *
- * `meta.source` tells the UI whether the response came from CoinGecko or
- * from the local fallback mock. This is used for two purposes:
- *   1. Dev observability — you can tell instantly when CoinGecko is down.
- *   2. Future UX — a subtle "showing cached data" indicator.
- */
+/** Envelope returned by the /api/crypto/* routes. */
 export interface ApiResponse<T> {
   data: T;
   meta: {
     source: "live" | "fallback";
-    fetchedAt: string;   // ISO timestamp
-    count: number;       // number of items in `data` (or 1 for singletons)
+    fetchedAt: string;
+    count: number;
   };
 }
