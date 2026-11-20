@@ -1,5 +1,3 @@
-// src/components/charts/InvestmentTimelineChart.tsx
-
 "use client";
 
 import {
@@ -14,7 +12,13 @@ import {
 } from "chart.js";
 import type { ChartOptions } from "chart.js";
 import { Line } from "react-chartjs-2";
+
 import type { InvestmentPoint } from "@/lib/analytics/calc";
+import { useTheme } from "@/context/ThemeContext";
+import {
+  getChartTheme,
+  getCartesianChartOptions,
+} from "@/utils/chartTheme";
 
 ChartJS.register(
   CategoryScale,
@@ -23,7 +27,7 @@ ChartJS.register(
   LineElement,
   Filler,
   Tooltip,
-  Legend
+  Legend,
 );
 
 interface InvestmentTimelineChartProps {
@@ -35,13 +39,16 @@ export default function InvestmentTimelineChart({
   points,
   height = 260,
 }: InvestmentTimelineChartProps) {
+  const { theme } = useTheme();
+  const chartTheme = getChartTheme(theme);
+
   if (points.length === 0) {
     return (
       <div
         className="flex flex-col items-center justify-center text-center"
         style={{ height }}
       >
-        <span className="text-3xl mb-2">📈</span>
+        <span className="mb-2 text-3xl">📈</span>
         <p className="text-sm text-secondary">
           Add transactions to see your investment timeline.
         </p>
@@ -50,11 +57,11 @@ export default function InvestmentTimelineChart({
   }
 
   const data = {
-    labels: points.map((p) => p.month),
+    labels: points.map((point) => point.month),
     datasets: [
       {
         label: "Net invested",
-        data: points.map((p) => p.cumulative),
+        data: points.map((point) => point.cumulative),
         fill: true,
         borderColor: "#3B82F6",
         backgroundColor: "rgba(59, 130, 246, 0.1)",
@@ -65,17 +72,21 @@ export default function InvestmentTimelineChart({
     ],
   };
 
+  const baseOptions = getCartesianChartOptions<"line">(chartTheme);
+
   const options: ChartOptions<"line"> = {
-    responsive: true,
-    maintainAspectRatio: false,
+    ...baseOptions,
+
     plugins: {
-      legend: { display: false },
+      ...baseOptions.plugins,
+
+      legend: {
+        ...baseOptions.plugins?.legend,
+        display: false,
+      },
+
       tooltip: {
-        backgroundColor: "#111827",
-        titleColor: "#F8FAFC",
-        bodyColor: "#94A3B8",
-        borderColor: "rgba(255,255,255,0.05)",
-        borderWidth: 1,
+        ...baseOptions.plugins?.tooltip,
         callbacks: {
           label: (context) =>
             `$${Number(context.raw).toLocaleString(undefined, {
@@ -84,16 +95,15 @@ export default function InvestmentTimelineChart({
         },
       },
     },
+
     scales: {
-      x: {
-        grid: { color: "rgba(255,255,255,0.05)" },
-        ticks: { color: "#94A3B8" },
-      },
+      ...baseOptions.scales,
+
       y: {
-        grid: { color: "rgba(255,255,255,0.05)" },
+        ...baseOptions.scales?.y,
         ticks: {
-          color: "#94A3B8",
-          callback: (value) => "$" + Number(value).toLocaleString(),
+          ...baseOptions.scales?.y?.ticks,
+          callback: (value) => `$${Number(value).toLocaleString()}`,
         },
       },
     },

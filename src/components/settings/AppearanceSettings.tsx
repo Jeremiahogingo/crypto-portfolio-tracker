@@ -1,75 +1,93 @@
+// src/components/settings/AppearanceSettings.tsx
 
 "use client";
 
+import { Moon, Sun } from "lucide-react";
 import Card from "@/components/ui/Card";
-import SettingRow from "./SettingRow";
-import Toggle from "./Toggle";
+import { useTheme } from "@/context/ThemeContext";
 
-interface AppearanceSettingsState {
-  theme: "dark" | "light";
-  compactMode: boolean;
-  showSparklines: boolean;
-}
+export default function AppearanceSettings() {
+  const { theme, setTheme } = useTheme();
 
-interface Props {
-  settings: AppearanceSettingsState;
-  onChange: <K extends keyof AppearanceSettingsState>(
-    key: K,
-    value: AppearanceSettingsState[K]
-  ) => void;
-}
-
-export default function AppearanceSettings({ settings, onChange }: Props) {
   return (
     <Card>
-      <h2 className="text-base font-semibold text-text mb-4">Appearance</h2>
-
-      <SettingRow label="Theme" description="Choose between dark and light mode.">
-        <div className="flex items-center gap-2 bg-surface rounded-lg p-1 border border-white/10">
-          <button
-            onClick={() => onChange("theme", "dark")}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              settings.theme === "dark"
-                ? "bg-primary text-white"
-                : "text-secondary hover:text-text"
-            }`}
-          >
-            🌙 Dark
-          </button>
-
-          <button
-            onClick={() => onChange("theme", "light")}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              settings.theme === "light"
-                ? "bg-primary text-white"
-                : "text-secondary hover:text-text"
-            }`}
-          >
-            ☀️ Light
-          </button>
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-base font-semibold text-text">Appearance</h2>
+          <p className="mt-1 text-sm text-secondary">
+            Personalize the visual appearance of CryptoTracker.
+          </p>
         </div>
-      </SettingRow>
 
-      <SettingRow
-        label="Compact Mode"
-        description="Reduce spacing for denser layouts."
-      >
-        <Toggle
-          checked={settings.compactMode}
-          onChange={(val) => onChange("compactMode", val)}
-        />
-      </SettingRow>
+        <div className="space-y-3">
+          <div>
+            <p className="text-sm font-medium text-text">Color theme</p>
+            <p className="mt-1 text-xs text-secondary">
+              Choose the appearance that feels most comfortable.
+            </p>
+          </div>
 
-      <SettingRow
-        label="Show Sparklines"
-        description="Display mini trend charts on coin rows."
-        borderBottom={false}
-      >
-        <Toggle
-          checked={settings.showSparklines}
-          onChange={(val) => onChange("showSparklines", val)}
-        />
-      </SettingRow>
+          <div role="group" aria-label="Color theme" className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              aria-pressed={theme === "light"}
+              onClick={() => setTheme("light")}
+              className={[
+                "flex items-center justify-center gap-2 rounded-xl border px-4 py-3",
+                "text-sm font-medium transition-all duration-200",
+                "focus-visible:outline-none focus-visible:ring-2",
+                "focus-visible:ring-primary focus-visible:ring-offset-2",
+                "focus-visible:ring-offset-background",
+                theme === "light"
+                  ? "border-primary bg-primary/10 text-primary shadow-sm"
+                  : "border-border bg-surface-muted text-secondary hover:bg-surface-elevated hover:text-text",
+              ].join(" ")}
+            >
+              <Sun size={17} aria-hidden="true" />
+              Light
+            </button>
+
+            <button
+              type="button"
+              aria-pressed={theme === "dark"}
+              onClick={() => setTheme("dark")}
+              className={[
+                "flex items-center justify-center gap-2 rounded-xl border px-4 py-3",
+                "text-sm font-medium transition-all duration-200",
+                "focus-visible:outline-none focus-visible:ring-2",
+                "focus-visible:ring-primary focus-visible:ring-offset-2",
+                "focus-visible:ring-offset-background",
+                theme === "dark"
+                  ? "border-primary bg-primary/10 text-primary shadow-sm"
+                  : "border-border bg-surface-muted text-secondary hover:bg-surface-elevated hover:text-text",
+              ].join(" ")}
+            >
+              <Moon size={17} aria-hidden="true" />
+              Dark
+            </button>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-border bg-surface-muted p-4">
+          <div className="flex items-start gap-3">
+            <div className="rounded-lg bg-surface-elevated p-2 text-primary">
+              {theme === "dark" ? (
+                <Moon size={18} aria-hidden="true" />
+              ) : (
+                <Sun size={18} aria-hidden="true" />
+              )}
+            </div>
+            <div>
+              <p className="text-sm font-medium text-text">
+                {theme === "dark" ? "Dark appearance enabled" : "Light appearance enabled"}
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-secondary">
+                Your preference is saved automatically and applied throughout the application.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
     </Card>
   );
 }

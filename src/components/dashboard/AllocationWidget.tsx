@@ -1,5 +1,3 @@
-// src/components/dashboard/AllocationWidget.tsx
-
 "use client";
 
 import { useMemo } from "react";
@@ -11,22 +9,28 @@ import {
   Legend,
 } from "chart.js";
 import type { ChartOptions } from "chart.js";
+
 import Card from "@/components/ui/Card";
 import { useHoldingsWithPrices } from "@/hooks/useHoldingsWithPrices";
 import { formatPrice } from "@/utils/format";
 import type { Holding } from "@/db/schema";
+import { useTheme } from "@/context/ThemeContext";
+import {
+  getChartTheme,
+  getDoughnutChartOptions,
+} from "@/utils/chartTheme";
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
 const PALETTE = [
-  "#F7931A", // Bitcoin orange
-  "#627EEA", // Ethereum blue
-  "#9945FF", // Solana purple
-  "#F0B90B", // BNB yellow
-  "#22C55E", // Green
-  "#3B82F6", // Blue
-  "#EF4444", // Red
-  "#94A3B8", // Slate
+  "#F7931A",
+  "#627EEA",
+  "#9945FF",
+  "#F0B90B",
+  "#22C55E",
+  "#3B82F6",
+  "#EF4444",
+  "#94A3B8",
 ];
 
 interface AllocationWidgetProps {
@@ -36,44 +40,40 @@ interface AllocationWidgetProps {
 export default function AllocationWidget({
   rawHoldings,
 }: AllocationWidgetProps) {
-  const { allocation, isLoadingPrices } = useHoldingsWithPrices(rawHoldings);
+  const { theme } = useTheme();
+  const chartTheme = getChartTheme(theme);
+
+  const { allocation, isLoadingPrices } =
+    useHoldingsWithPrices(rawHoldings);
 
   const data = useMemo(
     () => ({
-      labels: allocation.map((a) => a.symbol),
+      labels: allocation.map((item) => item.symbol),
       datasets: [
         {
-          data: allocation.map((a) => a.value),
+          data: allocation.map((item) => item.value),
           backgroundColor: allocation.map(
-            (_, i) => PALETTE[i % PALETTE.length]
+            (_, index) => PALETTE[index % PALETTE.length],
           ),
-          borderColor: "#111827",
+          borderColor: chartTheme.border,
           borderWidth: 2,
         },
       ],
     }),
-    [allocation]
+    [allocation, chartTheme.border],
   );
 
+  const baseOptions = getDoughnutChartOptions(chartTheme);
+
   const options: ChartOptions<"doughnut"> = {
-    responsive: true,
-    maintainAspectRatio: false,
+    ...baseOptions,
+
     plugins: {
-      legend: {
-        position: "bottom",
-        labels: {
-          color: "#94A3B8",
-          padding: 12,
-          usePointStyle: true,
-          pointStyle: "circle",
-        },
-      },
+      ...baseOptions.plugins,
+
       tooltip: {
-        backgroundColor: "#111827",
-        titleColor: "#F8FAFC",
-        bodyColor: "#94A3B8",
-        borderColor: "rgba(255,255,255,0.05)",
-        borderWidth: 1,
+        ...baseOptions.plugins?.tooltip,
+
         callbacks: {
           label: (context) => {
             const value = Number(context.raw);
@@ -86,11 +86,13 @@ export default function AllocationWidget({
 
   return (
     <Card>
-      <h3 className="text-sm font-semibold text-text mb-4">Asset Allocation</h3>
+      <h3 className="mb-4 text-sm font-semibold text-text">
+        Asset Allocation
+      </h3>
 
       {allocation.length === 0 ? (
-        <div className="h-[260px] flex flex-col items-center justify-center text-center">
-          <span className="text-3xl mb-2">📊</span>
+        <div className="flex h-[260px] flex-col items-center justify-center text-center">
+          <span className="mb-2 text-3xl">📊</span>
           <p className="text-sm text-secondary">
             {isLoadingPrices && rawHoldings.length > 0
               ? "Loading prices…"
