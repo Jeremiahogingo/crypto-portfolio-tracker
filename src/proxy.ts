@@ -1,6 +1,7 @@
 
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { publicEnv } from "@/lib/env/public";
 
 /**
  * Routes that require an authenticated user.
@@ -27,8 +28,8 @@ export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    publicEnv.supabaseUrl,
+    publicEnv.supabaseAnonKey,
     {
       cookies: {
         getAll() {
@@ -53,8 +54,8 @@ export async function proxy(request: NextRequest) {
     }
   );
 
-  // getUser() validates the session with Supabase instead of blindly
-  // trusting the access token contained in the browser cookie.
+  // Validate the session with Supabase rather than trusting the token
+  // contained in the browser cookie.
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -65,7 +66,6 @@ export async function proxy(request: NextRequest) {
     (prefix) => path === prefix || path.startsWith(`${prefix}/`)
   );
 
-  // Redirect unauthenticated users away from protected application pages.
   if (!user && isProtected) {
     const url = request.nextUrl.clone();
 
@@ -75,7 +75,6 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Authenticated users do not need to revisit login or signup.
   if (user && AUTH_ROUTES.includes(path)) {
     const url = request.nextUrl.clone();
 
@@ -95,6 +94,6 @@ export async function proxy(request: NextRequest) {
  */
 export const config = {
   matcher: [
-    "/((?!api|_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?)$).*)",
+    "/((?!api(?:/|$)|_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?)$).*)",
   ],
 };

@@ -1,17 +1,12 @@
 
 import { loadEnvConfig } from "@next/env";
 import { defineConfig } from "drizzle-kit";
+import { parseDatabaseUrl } from "./src/lib/env/validation";
 
 // Load Next.js environment files, including .env.local.
 loadEnvConfig(process.cwd());
 
-const databaseUrl = process.env.DATABASE_URL;
-
-if (!databaseUrl) {
-  throw new Error(
-    "DATABASE_URL is missing. Check that it is configured in .env.local."
-  );
-}
+const databaseUrl = parseDatabaseUrl(process.env.DATABASE_URL);
 
 export default defineConfig({
   schema: "./src/db/schema.ts",
