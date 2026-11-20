@@ -1,4 +1,6 @@
 // src/components/tables/MarketsTable.tsx
+//
+// Markets table with explicit unavailable-price handling.
 
 "use client";
 
@@ -39,12 +41,12 @@ export default function MarketsTable({
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+      <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h3 className="text-sm font-semibold text-text">
           All Cryptocurrencies
 
           {!isLoading && (
-            <span className="text-xs font-normal text-secondary ml-2">
+            <span className="ml-2 text-xs font-normal text-secondary">
               ({filtered.length})
             </span>
           )}
@@ -62,22 +64,22 @@ export default function MarketsTable({
         <table className="w-full">
           <thead>
             <tr className="border-b border-white/5">
-              <th className="text-left text-xs font-medium text-secondary uppercase tracking-wider py-3">
+              <th className="py-3 text-left text-xs font-medium uppercase tracking-wider text-secondary">
                 #
               </th>
-              <th className="text-left text-xs font-medium text-secondary uppercase tracking-wider py-3">
+              <th className="py-3 text-left text-xs font-medium uppercase tracking-wider text-secondary">
                 Name
               </th>
-              <th className="text-right text-xs font-medium text-secondary uppercase tracking-wider py-3">
+              <th className="py-3 text-right text-xs font-medium uppercase tracking-wider text-secondary">
                 Price
               </th>
-              <th className="text-right text-xs font-medium text-secondary uppercase tracking-wider py-3">
+              <th className="py-3 text-right text-xs font-medium uppercase tracking-wider text-secondary">
                 24h %
               </th>
-              <th className="text-right text-xs font-medium text-secondary uppercase tracking-wider py-3">
+              <th className="py-3 text-right text-xs font-medium uppercase tracking-wider text-secondary">
                 Market Cap
               </th>
-              <th className="text-right text-xs font-medium text-secondary uppercase tracking-wider py-3">
+              <th className="py-3 text-right text-xs font-medium uppercase tracking-wider text-secondary">
                 Volume (24h)
               </th>
             </tr>
@@ -85,8 +87,8 @@ export default function MarketsTable({
 
           <tbody>
             {isLoading &&
-              [0, 1, 2, 3, 4, 5].map((i) => (
-                <tr key={i} className="border-b border-white/5">
+              [0, 1, 2, 3, 4, 5].map((index) => (
+                <tr key={index} className="border-b border-white/5">
                   <td colSpan={6} className="py-4">
                     <Skeleton className="h-8 w-full" />
                   </td>
@@ -108,7 +110,7 @@ export default function MarketsTable({
               filtered.map((coin) => (
                 <tr
                   key={coin.id}
-                  className="border-b border-white/5 hover:bg-white/[0.02] transition-colors"
+                  className="border-b border-white/5 transition-colors hover:bg-white/[0.02]"
                 >
                   <td className="py-4 text-sm text-secondary">
                     {coin.rank}
@@ -123,10 +125,9 @@ export default function MarketsTable({
                       />
 
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-text truncate">
+                        <p className="truncate text-sm font-medium text-text">
                           {coin.name}
                         </p>
-
                         <p className="text-xs text-secondary">
                           {coin.symbol}
                         </p>
@@ -134,25 +135,31 @@ export default function MarketsTable({
                     </div>
                   </td>
 
-                  <td className="text-right text-sm text-text py-4">
-                    {formatPrice(coin.price)}
+                  <td className="py-4 text-right text-sm text-text">
+                    {coin.price === null
+                      ? "—"
+                      : formatPrice(coin.price)}
                   </td>
 
-                  <td className="text-right py-4">
-                    <Badge
-                      variant={
-                        coin.change24h >= 0 ? "success" : "danger"
-                      }
-                    >
-                      {formatPercent(coin.change24h)}
-                    </Badge>
+                  <td className="py-4 text-right">
+                    {coin.change24h === null ? (
+                      <span className="text-sm text-secondary">—</span>
+                    ) : (
+                      <Badge
+                        variant={
+                          coin.change24h >= 0 ? "success" : "danger"
+                        }
+                      >
+                        {formatPercent(coin.change24h)}
+                      </Badge>
+                    )}
                   </td>
 
-                  <td className="text-right text-sm text-text py-4">
+                  <td className="py-4 text-right text-sm text-text">
                     {formatCompactCurrency(coin.marketCap)}
                   </td>
 
-                  <td className="text-right text-sm text-text py-4">
+                  <td className="py-4 text-right text-sm text-text">
                     {formatCompactCurrency(coin.volume24h)}
                   </td>
                 </tr>

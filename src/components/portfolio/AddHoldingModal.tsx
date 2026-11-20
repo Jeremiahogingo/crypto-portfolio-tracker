@@ -1,3 +1,4 @@
+// src/components/portfolio/AddHoldingModal.tsx
 
 "use client";
 
@@ -6,7 +7,10 @@ import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
 import Skeleton from "@/components/ui/Skeleton";
 import CoinLogo from "@/components/ui/CoinLogo";
-import { addHolding, type HoldingsActionResult } from "@/lib/actions/holdings";
+import {
+  addHolding,
+  type HoldingsActionResult,
+} from "@/lib/actions/holdings";
 import { useMarkets } from "@/hooks/useMarkets";
 import { formatPrice } from "@/utils/format";
 
@@ -19,12 +23,20 @@ export default function AddHoldingModal({
   isOpen,
   onClose,
 }: AddHoldingModalProps) {
-  const { coins, isLoading } = useMarkets({ per_page: 100 });
+  const { coins, meta, isLoading } = useMarkets({ per_page: 100 });
 
   const [selectedCoinId, setSelectedCoinId] = useState("");
   const [costBasis, setCostBasis] = useState("");
 
-  const selectedCoin = coins.find((coin) => coin.id === selectedCoinId);
+  const selectedCoin = coins.find(
+    (coin) => coin.id === selectedCoinId
+  );
+
+  const hasLivePrice =
+    meta?.source === "live" &&
+    selectedCoin?.price !== null &&
+    selectedCoin?.price !== undefined &&
+    selectedCoin.price > 0;
 
   const resetForm = () => {
     setSelectedCoinId("");
@@ -40,7 +52,17 @@ export default function AddHoldingModal({
     const coin = coins.find((item) => item.id === nextCoinId);
 
     setSelectedCoinId(nextCoinId);
-    setCostBasis(coin ? coin.price.toString() : "");
+
+    // Only prefill from a verified live quote.
+    // A fallback or unavailable quote must not become a suggested basis.
+    setCostBasis(
+      meta?.source === "live" &&
+        coin?.price !== null &&
+        coin?.price !== undefined &&
+        coin.price > 0
+        ? coin.price.toString()
+        : ""
+    );
   };
 
   const [state, formAction, isPending] = useActionState<
@@ -56,10 +78,17 @@ export default function AddHoldingModal({
     return result;
   }, null);
 
+  const priceLabel = (price: number | null) => {
+    if (price === null) return "Price unavailable";
+
+    return meta?.source === "live"
+      ? formatPrice(price)
+      : `≈ ${formatPrice(price)} (fallback)`;
+  };
+
   return (
     <Modal isOpen={isOpen} onClose={handleClose} title="Add Holding">
       <form action={formAction} className="space-y-4">
-        {/* Hidden inputs carry the coin metadata through FormData */}
         <input type="hidden" name="coinId" value={selectedCoinId} />
         <input
           type="hidden"
@@ -68,7 +97,7 @@ export default function AddHoldingModal({
         />
 
         <div>
-          <label className="block text-xs font-medium text-secondary mb-2">
+          <label className="mb-2 block text-xs font-medium text-secondary">
             Coin
           </label>
 
@@ -79,13 +108,13 @@ export default function AddHoldingModal({
               value={selectedCoinId}
               onChange={(event) => handleCoinChange(event.target.value)}
               required
-              className="w-full bg-surface border border-white/10 rounded-lg px-3 py-2 text-sm text-text focus:outline-none focus:border-primary"
+              className="w-full rounded-lg border border-white/10 bg-surface px-3 py-2 text-sm text-text focus:border-primary focus:outline-none"
             >
               <option value="">Select a coin…</option>
 
               {coins.map((coin) => (
                 <option key={coin.id} value={coin.id}>
-                  {coin.symbol} — {coin.name} ({formatPrice(coin.price)})
+                  {coin.symbol} — {coin.name} ({priceLabel(coin.price)})
                 </option>
               ))}
             </select>
@@ -93,27 +122,31 @@ export default function AddHoldingModal({
         </div>
 
         {selectedCoin && (
-          <div className="flex items-center gap-3 p-3 bg-white/[0.02] border border-white/5 rounded-lg">
+          <div className="flex items-center gap-3 rounded-lg border border-white/5 bg-white/[0.02] p-3">
             <CoinLogo
               src={selectedCoin.logoUrl}
               alt={selectedCoin.name}
               size="md"
             />
 
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-text truncate">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-text">
                 {selectedCoin.name}
               </p>
 
               <p className="text-xs text-secondary">
-                Current price: {formatPrice(selectedCoin.price)}
+                {selectedCoin.price === null
+                  ? "Current market price unavailable"
+                  : meta?.source === "live"
+                    ? `Current live price: ${formatPrice(selectedCoin.price)}`
+                    : `Indicative fallback price: ${formatPrice(selectedCoin.price)}`}
               </p>
             </div>
           </div>
         )}
 
         <div>
-          <label className="block text-xs font-medium text-secondary mb-2">
+          <label className="mb-2 block text-xs font-medium text-secondary">
             Quantity
           </label>
 
@@ -124,12 +157,12 @@ export default function AddHoldingModal({
             min="0"
             required
             placeholder="e.g. 0.5"
-            className="w-full bg-surface border border-white/10 rounded-lg px-3 py-2 text-sm text-text placeholder-secondary focus:outline-none focus:border-primary"
+            className="w-full rounded-lg border border-white/10 bg-surface px-3 py-2 text-sm text-text placeholder-secondary focus:border-primary focus:outline-none"
           />
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-secondary mb-2">
+          <label className="mb-2 block text-xs font-medium text-secondary">
             Cost basis (price per unit, USD)
           </label>
 
@@ -142,22 +175,24 @@ export default function AddHoldingModal({
             value={costBasis}
             onChange={(event) => setCostBasis(event.target.value)}
             placeholder="e.g. 65000"
-            className="w-full bg-surface border border-white/10 rounded-lg px-3 py-2 text-sm text-text placeholder-secondary focus:outline-none focus:border-primary"
+            className="w-full rounded-lg border border-white/10 bg-surface px-3 py-2 text-sm text-text placeholder-secondary focus:border-primary focus:outline-none"
           />
 
-          <p className="text-xs text-secondary mt-1">
-            What you paid per coin. Pre-filled with the current price — edit
-            for older positions.
+          <p className="mt-1 text-xs text-secondary">
+            Enter the actual amount paid per coin.{" "}
+            {hasLivePrice
+              ? "A live market price was prefilled as a starting point; edit it to match your acquisition."
+              : "No verified live quote is available to prefill this field."}
           </p>
         </div>
 
         {state && "error" in state && (
-          <div className="text-xs text-danger bg-danger/10 border border-danger/20 rounded-lg px-3 py-2">
+          <div className="rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-xs text-danger">
             {state.error}
           </div>
         )}
 
-        <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/5">
+        <div className="flex items-center justify-end gap-3 border-t border-white/5 pt-4">
           <Button
             type="button"
             variant="secondary"

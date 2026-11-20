@@ -1,9 +1,7 @@
 // src/components/layout/Navbar.tsx
 //
-// Top navigation bar. Accepts the user prop from DashboardShell so the
-// avatar reflects the authenticated account.
-//
-// Ticker logic unchanged from Phase 3.
+// Top navigation bar.
+// Market ticker values are nullable and response provenance is retained.
 
 "use client";
 
@@ -20,56 +18,80 @@ interface NavbarProps {
 
 const TICKER_IDS = ["bitcoin", "ethereum"];
 
-export default function Navbar({ user, onMenuToggle }: NavbarProps) {
-  const { coins, isLoading } = useMarkets({
+export default function Navbar({
+  user,
+  onMenuToggle,
+}: NavbarProps) {
+  const { coins, meta, isLoading } = useMarkets({
     ids: TICKER_IDS,
     per_page: TICKER_IDS.length,
   });
 
+  const isFallback = meta?.source === "fallback";
+
   return (
-    <header className="sticky top-0 z-30 bg-surface/80 backdrop-blur-md border-b border-white/5">
-      <div className="flex items-center justify-between px-4 lg:px-6 h-16">
+    <header className="sticky top-0 z-30 border-b border-white/5 bg-surface/80 backdrop-blur-md">
+      <div className="flex h-16 items-center justify-between px-4 lg:px-6">
         <div className="flex items-center gap-4">
           <button
             onClick={onMenuToggle}
-            className="p-2 lg:hidden text-secondary hover:text-text"
+            className="p-2 text-secondary hover:text-text lg:hidden"
             aria-label="Open menu"
           >
             ☰
           </button>
-          <div className="hidden sm:flex items-center gap-4">
+
+          <div className="hidden items-center gap-4 sm:flex">
             <div className="relative">
               <input
                 type="text"
                 placeholder="Search cryptocurrencies..."
-                className="w-64 bg-surface border border-white/5 rounded-lg py-2 pl-10 pr-4 text-sm text-text placeholder-secondary focus:outline-none focus:border-primary transition-colors"
+                className="w-64 rounded-lg border border-white/5 bg-surface py-2 pl-10 pr-4 text-sm text-text placeholder-secondary transition-colors focus:border-primary focus:outline-none"
               />
-              <span className="absolute left-3 top-2.5 text-secondary text-sm">
+
+              <span className="absolute left-3 top-2.5 text-sm text-secondary">
                 🔍
               </span>
             </div>
 
-            <div className="hidden md:flex items-center gap-2">
+            <div className="hidden items-center gap-2 md:flex">
               {isLoading &&
-                [0, 1].map((i) => (
-                  <Skeleton key={i} className="h-7 w-20 rounded-full" />
+                [0, 1].map((index) => (
+                  <Skeleton
+                    key={index}
+                    className="h-7 w-20 rounded-full"
+                  />
                 ))}
 
               {!isLoading &&
                 coins.map((coin) => (
                   <div
                     key={coin.id}
-                    className="flex items-center gap-1 bg-surface px-3 py-1 rounded-full border border-white/5"
+                    title={
+                      isFallback
+                        ? "Indicative fallback market data"
+                        : "Market data"
+                    }
+                    className="flex items-center gap-1 rounded-full border border-white/5 bg-surface px-3 py-1"
                   >
                     <span className="text-sm font-medium text-text">
                       {coin.symbol}
                     </span>
+
                     <span
                       className={`text-xs font-medium ${
-                        coin.change24h >= 0 ? "text-success" : "text-danger"
+                        coin.change24h === null
+                          ? "text-secondary"
+                          : isFallback
+                            ? "text-warning"
+                            : coin.change24h >= 0
+                              ? "text-success"
+                              : "text-danger"
                       }`}
                     >
-                      {formatPercent(coin.change24h)}
+                      {coin.change24h === null
+                        ? "—"
+                        : `${isFallback ? "≈ " : ""}${formatPercent(coin.change24h)}`}
                     </span>
                   </div>
                 ))}
@@ -79,11 +101,16 @@ export default function Navbar({ user, onMenuToggle }: NavbarProps) {
 
         <div className="flex items-center gap-2">
           <ThemeToggle />
-          <button className="p-2 text-secondary hover:text-text relative">
+
+          <button
+            className="relative p-2 text-secondary hover:text-text"
+            aria-label="Notifications"
+          >
             🔔
-            <span className="absolute top-1 right-1 w-2 h-2 bg-danger rounded-full" />
+            <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-danger" />
           </button>
-          <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-sm font-medium">
+
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/20 text-sm font-medium">
             {user.initials}
           </div>
         </div>

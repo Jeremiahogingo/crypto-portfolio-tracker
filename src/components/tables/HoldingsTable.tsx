@@ -1,12 +1,10 @@
 // src/components/tables/HoldingsTable.tsx
 //
-// Holdings table. Purely presentational — receives enriched holdings with
-// current prices already computed. Edit/Delete callbacks are optional so
-// the table can render read-only (dashboard) or interactive (portfolio page).
+// Presentational holdings table.
 //
-// Row click doesn't navigate anywhere (yet) — the row is the display unit,
-// and the edit/delete buttons are the actions. A detail view per holding
-// is deferred; it's not needed to prove the app works.
+// Live prices can be used for verified P&L.
+// Fallback prices are indicative only.
+// Missing prices are rendered as unavailable, never as zero.
 
 "use client";
 
@@ -27,8 +25,12 @@ interface HoldingsTableProps {
   onEdit?: (holding: HoldingWithPrice) => void;
   onDelete?: (holding: HoldingWithPrice) => void;
   onAdd?: () => void;
-  /** When true, "Actions" column is hidden (used on dashboard). */
+  /** When true, the Actions column is hidden. */
   readOnly?: boolean;
+}
+
+function unavailableLabel(isLoading: boolean): string {
+  return isLoading ? "Loading…" : "Unavailable";
 }
 
 export default function HoldingsTable({
@@ -56,110 +58,181 @@ export default function HoldingsTable({
       <table className="w-full">
         <thead>
           <tr className="border-b border-white/5">
-            <th className="text-left text-xs font-medium text-secondary uppercase tracking-wider py-3">
+            <th className="py-3 text-left text-xs font-medium uppercase tracking-wider text-secondary">
               Coin
             </th>
-            <th className="text-right text-xs font-medium text-secondary uppercase tracking-wider py-3">
+
+            <th className="py-3 text-right text-xs font-medium uppercase tracking-wider text-secondary">
               Price
             </th>
-            <th className="text-right text-xs font-medium text-secondary uppercase tracking-wider py-3">
+
+            <th className="py-3 text-right text-xs font-medium uppercase tracking-wider text-secondary">
               Quantity
             </th>
-            <th className="text-right text-xs font-medium text-secondary uppercase tracking-wider py-3">
+
+            <th className="py-3 text-right text-xs font-medium uppercase tracking-wider text-secondary">
               Value
             </th>
-            <th className="text-right text-xs font-medium text-secondary uppercase tracking-wider py-3">
+
+            <th className="py-3 text-right text-xs font-medium uppercase tracking-wider text-secondary">
               24H
             </th>
-            <th className="text-right text-xs font-medium text-secondary uppercase tracking-wider py-3">
+
+            <th className="py-3 text-right text-xs font-medium uppercase tracking-wider text-secondary">
               P&amp;L
             </th>
+
             {!readOnly && (
-              <th className="text-right text-xs font-medium text-secondary uppercase tracking-wider py-3">
+              <th className="py-3 text-right text-xs font-medium uppercase tracking-wider text-secondary">
                 Actions
               </th>
             )}
           </tr>
         </thead>
+
         <tbody>
-          {holdings.map((h) => (
-            <tr
-              key={h.id}
-              className="border-b border-white/5 hover:bg-white/[0.02] transition-colors"
-            >
-              <td className="py-4">
-                <div className="flex items-center gap-3">
-                  <span className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-sm font-medium">
-                    {h.symbol.slice(0, 2)}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-text truncate">
-                      {h.symbol}
-                    </p>
-                    <p className="text-xs text-secondary truncate">{h.coinId}</p>
-                  </div>
-                </div>
-              </td>
-              <td className="text-right text-sm text-text py-4">
-                {isLoadingPrices && h.currentPrice === 0 ? (
-                  <span className="text-secondary">—</span>
-                ) : (
-                  formatPrice(h.currentPrice)
-                )}
-              </td>
-              <td className="text-right text-sm text-text py-4">
-                {formatQuantity(h.quantity)}
-              </td>
-              <td className="text-right text-sm font-medium text-text py-4">
-                {isLoadingPrices && h.currentValue === 0 ? (
-                  <span className="text-secondary">—</span>
-                ) : (
-                  formatPrice(h.currentValue)
-                )}
-              </td>
-              <td className="text-right py-4">
-                <Badge variant={h.change24h >= 0 ? "success" : "danger"}>
-                  {formatPercent(h.change24h)}
-                </Badge>
-              </td>
-              <td className="text-right py-4">
-                <div className="flex flex-col items-end">
-                  <span
-                    className={`text-sm ${
-                      h.pnl >= 0 ? "text-success" : "text-danger"
-                    }`}
-                  >
-                    {formatSignedCurrency(h.pnl)}
-                  </span>
-                  <span className="text-xs text-secondary">
-                    {formatPercent(h.pnlPercent)}
-                  </span>
-                </div>
-              </td>
-              {!readOnly && (
-                <td className="text-right py-4">
-                  <div className="flex items-center justify-end gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onEdit?.(h)}
-                      aria-label={`Edit ${h.symbol}`}
-                    >
-                      ✏️
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onDelete?.(h)}
-                      aria-label={`Delete ${h.symbol}`}
-                    >
-                      🗑️
-                    </Button>
+          {holdings.map((holding) => {
+            const isFallback = holding.priceStatus === "fallback";
+            const hasLivePrice = holding.priceStatus === "live";
+
+            const priceDisplay =
+              holding.currentPrice === null
+                ? unavailableLabel(isLoadingPrices)
+                : isFallback
+                  ? `≈ ${formatPrice(holding.currentPrice)}`
+                  : formatPrice(holding.currentPrice);
+
+            const valueDisplay =
+              holding.currentValue === null
+                ? unavailableLabel(isLoadingPrices)
+                : isFallback
+                  ? `≈ ${formatPrice(holding.currentValue)}`
+                  : formatPrice(holding.currentValue);
+
+            const pnlIsAvailable =
+              hasLivePrice && holding.pnl !== null;
+
+            return (
+              <tr
+                key={holding.id}
+                className="border-b border-white/5 transition-colors hover:bg-white/[0.02]"
+              >
+                <td className="py-4">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/5 text-sm font-medium">
+                      {holding.symbol.slice(0, 2)}
+                    </span>
+
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-text">
+                        {holding.symbol}
+                      </p>
+
+                      <p className="truncate text-xs text-secondary">
+                        {holding.coinId}
+                      </p>
+
+                      {isFallback && (
+                        <p
+                          className="mt-0.5 text-xs text-warning"
+                          title="This quote comes from fallback data and is not included in verified portfolio totals."
+                        >
+                          Indicative price
+                        </p>
+                      )}
+
+                      {holding.priceStatus === "unavailable" && (
+                        <p className="mt-0.5 text-xs text-secondary">
+                          Price unavailable
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </td>
-              )}
-            </tr>
-          ))}
+
+                <td className="py-4 text-right text-sm text-text">
+                  {priceDisplay}
+                </td>
+
+                <td className="py-4 text-right text-sm text-text">
+                  {formatQuantity(holding.quantity)}
+                </td>
+
+                <td className="py-4 text-right text-sm font-medium text-text">
+                  {valueDisplay}
+                </td>
+
+                <td className="py-4 text-right">
+                  {hasLivePrice && holding.change24h !== null ? (
+                    <Badge
+                      variant={
+                        holding.change24h >= 0 ? "success" : "danger"
+                      }
+                    >
+                      {formatPercent(holding.change24h)}
+                    </Badge>
+                  ) : (
+                    <span className="text-sm text-secondary">—</span>
+                  )}
+                </td>
+
+                <td className="py-4 text-right">
+                  <div className="flex flex-col items-end">
+                    {pnlIsAvailable ? (
+                      <>
+                        <span
+                          className={`text-sm ${
+                            holding.pnl! >= 0
+                              ? "text-success"
+                              : "text-danger"
+                          }`}
+                        >
+                          {formatSignedCurrency(holding.pnl!)}
+                        </span>
+
+                        <span className="text-xs text-secondary">
+                          {holding.pnlPercent === null
+                            ? "—"
+                            : formatPercent(holding.pnlPercent)}
+                        </span>
+                      </>
+                    ) : (
+                      <span
+                        className="text-sm text-secondary"
+                        title="Unrealised P&L requires a verified live market quote."
+                      >
+                        —
+                      </span>
+                    )}
+                  </div>
+                </td>
+
+                {!readOnly && (
+                  <td className="py-4 text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onEdit?.(holding)}
+                        aria-label={`Edit ${holding.symbol}`}
+                      >
+                        ✏️
+                      </Button>
+
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onDelete?.(holding)}
+                        aria-label={`Delete ${holding.symbol}`}
+                      >
+                        🗑️
+                      </Button>
+                    </div>
+                  </td>
+                )}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

@@ -1,3 +1,4 @@
+// src/components/watchlist/AddWatchlistCoinModal.tsx
 
 "use client";
 
@@ -14,7 +15,7 @@ import { formatPrice } from "@/utils/format";
 
 interface AddWatchlistCoinModalProps {
   isOpen: boolean;
-  /** Coin IDs already tracked by the user; these are excluded from selection. */
+  /** Coin IDs already tracked by the user. */
   existingCoinIds: string[];
   onClose: () => void;
 }
@@ -24,10 +25,9 @@ export default function AddWatchlistCoinModal({
   existingCoinIds,
   onClose,
 }: AddWatchlistCoinModalProps) {
-  const { coins, isLoading } = useMarkets({ per_page: 100 });
+  const { coins, meta, isLoading } = useMarkets({ per_page: 100 });
   const [selectedCoinId, setSelectedCoinId] = useState("");
 
-  // Exclude existing entries to prevent users selecting duplicate watchlist items.
   const availableCoins = useMemo(() => {
     const existingIds = new Set(existingCoinIds);
     return coins.filter((coin) => !existingIds.has(coin.id));
@@ -59,6 +59,14 @@ export default function AddWatchlistCoinModal({
     return result;
   }, null);
 
+  const priceLabel = (price: number | null) => {
+    if (price === null) return "Price unavailable";
+
+    return meta?.source === "live"
+      ? formatPrice(price)
+      : `≈ ${formatPrice(price)} (fallback)`;
+  };
+
   return (
     <Modal
       isOpen={isOpen}
@@ -74,14 +82,14 @@ export default function AddWatchlistCoinModal({
         />
 
         <div>
-          <label className="block text-xs font-medium text-secondary mb-2">
+          <label className="mb-2 block text-xs font-medium text-secondary">
             Coin
           </label>
 
           {isLoading ? (
             <Skeleton className="h-10 w-full" />
           ) : availableCoins.length === 0 ? (
-            <p className="text-sm text-secondary py-2">
+            <p className="py-2 text-sm text-secondary">
               All top-100 coins are already in your watchlist.
             </p>
           ) : (
@@ -89,13 +97,13 @@ export default function AddWatchlistCoinModal({
               value={selectedCoinId}
               onChange={(event) => setSelectedCoinId(event.target.value)}
               required
-              className="w-full bg-surface border border-white/10 rounded-lg px-3 py-2 text-sm text-text focus:outline-none focus:border-primary"
+              className="w-full rounded-lg border border-white/10 bg-surface px-3 py-2 text-sm text-text focus:border-primary focus:outline-none"
             >
               <option value="">Select a coin…</option>
 
               {availableCoins.map((coin) => (
                 <option key={coin.id} value={coin.id}>
-                  {coin.symbol} — {coin.name} ({formatPrice(coin.price)})
+                  {coin.symbol} — {coin.name} ({priceLabel(coin.price)})
                 </option>
               ))}
             </select>
@@ -103,12 +111,12 @@ export default function AddWatchlistCoinModal({
         </div>
 
         {state && "error" in state && (
-          <div className="text-xs text-danger bg-danger/10 border border-danger/20 rounded-lg px-3 py-2">
+          <div className="rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-xs text-danger">
             {state.error}
           </div>
         )}
 
-        <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/5">
+        <div className="flex items-center justify-end gap-3 border-t border-white/5 pt-4">
           <Button
             type="button"
             variant="secondary"
