@@ -1,67 +1,57 @@
-// src/components/onboarding/OnboardingForm.tsx
-//
-// Onboarding form — display name + display currency.
-//
-// Deliberately minimal: two fields and a single button. Every additional
-// step in onboarding is a drop-off point. The default portfolio is created
-// server-side in completeOnboarding — the user doesn't need to know about it.
-//
-// Uses React 19's useActionState for progressive enhancement: the form
-// submits and works even before hydration, which is what makes
-// Server Actions feel instant. The action returns ActionResult; we surface
-// errors inline.
-
 "use client";
 
 import { useActionState } from "react";
+
 import { completeOnboarding, type ActionResult } from "@/lib/actions/profile";
 import Button from "@/components/ui/Button";
 
 interface OnboardingFormProps {
   suggestedName: string;
-  suggestedCurrency: string;
   email: string;
 }
 
-const CURRENCIES = [
-  { code: "USD", symbol: "$", label: "US Dollar" },
-  { code: "EUR", symbol: "€", label: "Euro" },
-  { code: "GBP", symbol: "£", label: "British Pound" },
-  { code: "KES", symbol: "KSh", label: "Kenyan Shilling" },
-  { code: "JPY", symbol: "¥", label: "Japanese Yen" },
-  { code: "NGN", symbol: "₦", label: "Nigerian Naira" },
-];
-
 export default function OnboardingForm({
   suggestedName,
-  suggestedCurrency,
   email,
 }: OnboardingFormProps) {
   const [state, formAction, isPending] = useActionState<
     ActionResult | null,
     FormData
-  >(async (_prev, formData) => completeOnboarding(formData), null);
+  >(async (_previousState, formData) => {
+    return completeOnboarding(formData);
+  }, null);
 
   return (
-    <div className="bg-surface border border-white/5 rounded-2xl p-8">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center text-white font-bold">
+    <div className="rounded-2xl border border-border bg-surface p-8">
+      <div className="mb-6 flex items-center gap-3">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary font-bold text-white">
           CT
         </div>
-        <span className="text-xl font-bold text-text">CryptoTracker</span>
+
+        <span className="text-xl font-bold text-text">
+          CryptoTracker
+        </span>
       </div>
 
-      <h1 className="text-lg font-semibold text-text mb-1">Welcome aboard</h1>
-      <p className="text-sm text-secondary mb-6">
+      <h1 className="mb-1 text-lg font-semibold text-text">
+        Welcome aboard
+      </h1>
+
+      <p className="mb-6 text-sm text-secondary">
         Let&apos;s set up your account. This takes about 30 seconds.
       </p>
 
       <form action={formAction} className="space-y-4">
         <div>
-          <label className="block text-xs font-medium text-secondary mb-1.5">
+          <label
+            htmlFor="onboarding-display-name"
+            className="mb-1.5 block text-xs font-medium text-secondary"
+          >
             Display name
           </label>
+
           <input
+            id="onboarding-display-name"
             type="text"
             name="displayName"
             required
@@ -69,37 +59,36 @@ export default function OnboardingForm({
             minLength={2}
             maxLength={50}
             autoComplete="name"
-            className="w-full bg-surface border border-white/10 rounded-lg px-3 py-2 text-sm text-text placeholder-secondary focus:outline-none focus:border-primary"
+            className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text placeholder:text-secondary focus:border-primary focus:outline-none"
             placeholder="How should we address you?"
           />
-          <p className="text-xs text-secondary mt-1">
-            We&apos;ll show this in your dashboard and emails.
+
+          <p className="mt-1 text-xs text-secondary">
+            We&apos;ll show this in your dashboard.
           </p>
         </div>
 
-        <div>
-          <label className="block text-xs font-medium text-secondary mb-1.5">
-            Display currency
-          </label>
-          <select
-            name="currency"
-            defaultValue={suggestedCurrency}
-            className="w-full bg-surface border border-white/10 rounded-lg px-3 py-2 text-sm text-text focus:outline-none focus:border-primary"
-          >
-            {CURRENCIES.map((c) => (
-              <option key={c.code} value={c.code}>
-                {c.symbol} {c.code} — {c.label}
-              </option>
-            ))}
-          </select>
-          <p className="text-xs text-secondary mt-1">
-            All prices will be displayed in this currency. You can change it
-            anytime in Settings.
+        <div className="rounded-xl border border-border bg-surface-muted p-4">
+          <p className="text-xs font-medium text-secondary">
+            Reporting currency
+          </p>
+
+          <p className="mt-1 text-base font-semibold text-text">
+            USD — US Dollar
+          </p>
+
+          <p className="mt-1 text-xs leading-relaxed text-secondary">
+            Market prices, portfolio valuations, and recorded transactions
+            are currently represented in USD. Other display currencies are
+            not supported yet.
           </p>
         </div>
 
         {state && "error" in state && (
-          <div className="text-xs text-danger bg-danger/10 border border-danger/20 rounded-lg px-3 py-2">
+          <div
+            role="alert"
+            className="rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-xs text-danger"
+          >
             {state.error}
           </div>
         )}
@@ -113,7 +102,7 @@ export default function OnboardingForm({
           {isPending ? "Setting up…" : "Continue to dashboard"}
         </Button>
 
-        <p className="text-xs text-secondary text-center">
+        <p className="text-center text-xs text-secondary">
           Signed in as {email}
         </p>
       </form>
