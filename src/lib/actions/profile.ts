@@ -1,24 +1,25 @@
-// src/lib/actions/profile.ts
-//
-// Server Actions for profile and onboarding mutations.
-//
-// Security:
-// - Every action requires a verified Supabase session.
-// - The authenticated user ID is the only source of profile ownership.
-// - Browser-submitted profile IDs and user IDs are never trusted.
-// - Database mutations include explicit ownership predicates.
-//
-// Consistency:
-// - Onboarding updates the profile and provisions the default portfolio
-//   inside one database transaction.
-// - The profile UPDATE acquires a PostgreSQL row lock. Concurrent onboarding
-//   requests for the same user therefore serialize before checking whether
-//   the default portfolio already exists.
-// - A missing profile aborts the entire onboarding transaction.
-//
-// Redirect handling:
-// Next.js redirect() throws internally. It is intentionally called outside
-// mutation try/catch blocks so that successful redirects are not swallowed.
+
+/**
+ * src/lib/actions/profile.ts
+ *
+ * Server Actions for profile and onboarding mutations.
+ *
+ * Security:
+ * - Every action requires a verified Supabase user.
+ * - User ownership is derived exclusively from the authenticated session.
+ * - Browser-submitted user IDs and profile IDs are never trusted.
+ * - Database mutations use explicit ownership predicates.
+ *
+ * Consistency:
+ * - Onboarding profile provisioning and default portfolio creation are atomic.
+ * - Profile upsert serializes concurrent onboarding requests for the same user.
+ * - Missing profiles can be recovered without creating duplicate profile rows.
+ * - Default portfolio provisioning remains idempotent.
+ *
+ * Redirect handling:
+ * Next.js redirect() throws internally. It must remain outside mutation
+ * try/catch blocks so successful redirects propagate to the framework.
+ */
 
 "use server";
 
@@ -35,7 +36,6 @@ import { profiles, portfolios } from "@/db/schema";
 // Validation schemas
 // --------------------------------------------------
 
-// Keep supported currencies aligned with the settings UI.
 const SUPPORTED_CURRENCIES = [
   "USD",
   "EUR",
@@ -51,6 +51,7 @@ const OnboardingSchema = z.object({
     .trim()
     .min(2, "Display name must be at least 2 characters")
     .max(50, "Display name must be 50 characters or fewer"),
+
   currency: z.enum(SUPPORTED_CURRENCIES),
 });
 
@@ -74,13 +75,17 @@ export type ActionResult =
 /**
  * Complete first-run onboarding for the authenticated user.
  *
- * The profile update and default portfolio provisioning are atomic.
- * Updating the profile also acquires a row-level lock, serializing concurrent
- * onboarding attempts for the same user.
+ * The profile upsert and default portfolio provisioning execute
+ * within one PostgreSQL transaction.
  *
- * This prevents duplicate default portfolios without imposing a global
- * one-portfolio-per-user constraint, which would conflict with the future
- * multiple-portfolio feature.
+ * The upsert handles both an existing profile and a missing profile.
+ *
+ * PostgreSQL's INSERT ... ON CONFLICT DO UPDATE obtains the necessary
+ * row-level lock. Concurrent onboarding requests for the same user
+ * therefore serialize before checking for an existing portfolio.
+ *
+ * This deliberately avoids a global one-portfolio-per-user restriction,
+ * allowing multiple portfolios to be supported in the future.
  */
 export async function completeOnboarding(
   formData: FormData
@@ -102,37 +107,49 @@ export async function completeOnboarding(
     };
   }
 
+  // The authenticated Supabase identity is the sole source of ownership.
   const userId = session.auth.id;
   const { displayName, currency } = parsed.data;
 
+  // Use one timestamp consistently for this onboarding operation.
+  const onboardedAt = new Date();
+
   try {
     await db.transaction(async (tx) => {
-      // This UPDATE is both the profile mutation and the serialization
-      // point. PostgreSQL holds the row lock until this transaction ends.
+      // Recover a missing profile or update the existing profile.
       //
-      // A concurrent onboarding request for this user waits here. Under
-      // PostgreSQL's default READ COMMITTED isolation, its following SELECT
-      // sees the portfolio committed by the preceding request.
-      const [updatedProfile] = await tx
-        .update(profiles)
-        .set({
+      // A concurrent request for the same user will wait for the
+      // conflicting INSERT/UPDATE to finish before proceeding.
+      const [upsertedProfile] = await tx
+        .insert(profiles)
+        .values({
+          id: userId,
           displayName,
           currency,
-          onboardedAt: new Date(),
+          onboardedAt,
         })
-        .where(eq(profiles.id, userId))
+        .onConflictDoUpdate({
+          target: profiles.id,
+          set: {
+            displayName,
+            currency,
+            onboardedAt,
+          },
+        })
         .returning({
           id: profiles.id,
         });
 
-      // Do not create a portfolio for an identity whose profile could not
-      // be updated. Throwing rolls back the entire onboarding transaction.
-      if (!updatedProfile) {
+      // Defensive check: the upsert should always return the profile.
+      if (!upsertedProfile) {
         throw new Error(
-          "Profile not found for authenticated onboarding user"
+          "Failed to provision the authenticated user's profile"
         );
       }
 
+      // PostgreSQL READ COMMITTED gives this statement a fresh snapshot.
+      // A concurrent onboarding transaction that completed while this
+      // transaction waited will therefore be visible here.
       const [existingPortfolio] = await tx
         .select({
           id: portfolios.id,
@@ -142,6 +159,7 @@ export async function completeOnboarding(
         .orderBy(portfolios.createdAt)
         .limit(1);
 
+      // Provision the default portfolio only when one does not exist.
       if (!existingPortfolio) {
         await tx.insert(portfolios).values({
           userId,
@@ -160,8 +178,7 @@ export async function completeOnboarding(
 
   revalidatePath("/", "layout");
 
-  // Keep redirect outside the try/catch. Next.js implements redirect()
-  // using a special thrown value that must propagate to the framework.
+  // Keep outside the try/catch because Next.js redirect() throws internally.
   redirect("/");
 }
 
@@ -172,8 +189,8 @@ export async function completeOnboarding(
 /**
  * Update the authenticated user's display name and preferred currency.
  *
- * This operation deliberately does not modify onboardedAt. It is used
- * after onboarding has already been completed.
+ * This operation deliberately does not change onboardedAt.
+ * It is intended for users who have already completed onboarding.
  */
 export async function updateProfile(
   formData: FormData
@@ -181,7 +198,9 @@ export async function updateProfile(
   const session = await getCurrentUser();
 
   if (!session) {
-    return { error: "Not authenticated" };
+    return {
+      error: "Not authenticated",
+    };
   }
 
   const parsed = UpdateProfileSchema.safeParse({
@@ -209,7 +228,7 @@ export async function updateProfile(
 
     if (!updatedProfile) {
       return {
-        error: "Profile not found. Please sign in again.",
+        error: "Profile not found. Please complete onboarding again.",
       };
     }
   } catch (err) {
@@ -222,5 +241,7 @@ export async function updateProfile(
 
   revalidatePath("/", "layout");
 
-  return { success: true };
+  return {
+    success: true,
+  };
 }

@@ -1,36 +1,90 @@
-// src/components/auth/LogoutButton.tsx
-//
-// Small client component that clears the session and redirects to /login.
-//
-// router.refresh() is called before push: it re-renders Server Components
-// (which will see no user), then push navigates. If we pushed first, the
-// dashboard would briefly render with stale auth state.
+
+/**
+ * src/components/auth/LogoutButton.tsx
+ *
+ * Client-side logout control.
+ *
+ * Security:
+ * - Uses the authenticated user's Supabase client.
+ * - Waits for Supabase sign-out to complete before navigating.
+ * - Does not report successful logout when sign-out fails.
+ * - Displays a recoverable error when logout cannot be completed.
+ */
 
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+
 import { createClient } from "@/lib/supabase/client";
 
-export default function LogoutButton({ className }: { className?: string }) {
+interface LogoutButtonProps {
+  className?: string;
+}
+
+export default function LogoutButton({
+  className,
+}: LogoutButtonProps) {
   const router = useRouter();
+
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleLogout = async () => {
+    if (loading) {
+      return;
+    }
+
     setLoading(true);
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.refresh();
-    router.push("/login");
+    setError(null);
+
+    try {
+      const supabase = createClient();
+
+      const { error: signOutError } = await supabase.auth.signOut();
+
+      if (signOutError) {
+        console.error("[LogoutButton] Supabase sign-out failed", signOutError);
+
+        setError("Unable to sign out. Please try again.");
+        return;
+      }
+
+      // Re-render Server Components after the session cookies have
+      // been cleared by Supabase.
+      router.refresh();
+
+      // Replace the authenticated page in browser history.
+      router.replace("/login");
+    } catch (err) {
+      console.error("[LogoutButton] Unexpected sign-out failure", err);
+
+      setError("An unexpected error occurred while signing out.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <button
-      onClick={handleLogout}
-      disabled={loading}
-      className={className}
-    >
-      {loading ? "Signing out…" : "Logout"}
-    </button>
+    <div>
+      <button
+        type="button"
+        onClick={handleLogout}
+        disabled={loading}
+        aria-busy={loading}
+        className={className}
+      >
+        {loading ? "Signing out…" : "Logout"}
+      </button>
+
+      {error && (
+        <p
+          role="alert"
+          className="mt-2 text-xs text-danger"
+        >
+          {error}
+        </p>
+      )}
+    </div>
   );
 }

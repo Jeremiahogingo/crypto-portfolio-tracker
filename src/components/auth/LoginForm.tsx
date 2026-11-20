@@ -1,62 +1,78 @@
-// src/components/auth/LoginForm.tsx
-//
-// Login form — email/password sign-in via Supabase Auth.
-//
-// ─── Flow ────────────────────────────────────────────────────────────────
-// 1. User submits form.
-// 2. supabase.auth.signInWithPassword issues a session, which the SDK stores
-//    in cookies (via @supabase/ssr).
-// 3. We router.push() to the `next` query param (set by middleware) or "/".
-// 4. router.refresh() re-renders Server Components so they see the new session.
-//
-// Step 4 is required — without it, Server Components cache their previous
-// (unauthenticated) render and the user sees a broken dashboard until they
-// manually reload.
-//
-// ─── Errors ──────────────────────────────────────────────────────────────
-// Supabase returns the same message for wrong password and unknown email
-// ("Invalid login credentials") by design — it prevents user enumeration.
-// We surface the message verbatim; translating it would defeat the purpose.
+/**
+ * src/components/auth/LoginForm.tsx
+ *
+ * Login form using Supabase email/password authentication.
+ *
+ * Authentication flow:
+ * 1. User submits their email and password.
+ * 2. Supabase validates credentials and issues a session.
+ * 3. The Supabase client persists the session through its cookie adapter.
+ * 4. The application navigates to a validated internal destination.
+ * 5. Server Components refresh and render using the authenticated session.
+ *
+ * Security:
+ * - Credentials are submitted directly to Supabase Auth.
+ * - Supabase error messages are displayed without exposing credentials.
+ * - The optional "next" query parameter is untrusted input.
+ * - Navigation destinations are validated before router.push().
+ */
 
 "use client";
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+
 import { createClient } from "@/lib/supabase/client";
+import { getSafeNextPath } from "@/lib/auth/safe-redirect";
 import Button from "@/components/ui/Button";
 
 export default function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") ?? "/";
+
+  // Query parameters are untrusted input.
+  // Only validated application-relative destinations are accepted.
+  const next = getSafeNextPath(searchParams.get("next"));
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
     setError(null);
     setLoading(true);
 
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const supabase = createClient();
 
-    if (error) {
-      setError(error.message);
+      const { error: signInError } =
+        await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+      if (signInError) {
+        setError(signInError.message);
+        return;
+      }
+
+      // Refresh Server Components so they observe the newly established
+      // authentication session.
+      router.refresh();
+
+      // The destination has already passed same-origin validation.
+      router.push(next);
+    } catch (err) {
+      console.error("[LoginForm] Sign-in failed", err);
+
+      setError("Unable to sign in. Please try again.");
+    } finally {
       setLoading(false);
-      return;
     }
-
-    // refresh() forces Server Components to re-run with the new session cookie.
-    // Without this, the dashboard renders with stale (unauthenticated) data.
-    router.refresh();
-    router.push(next);
   };
 
   return (
@@ -65,10 +81,16 @@ export default function LoginForm() {
         <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center text-white font-bold">
           CT
         </div>
-        <span className="text-xl font-bold text-text">CryptoTracker</span>
+
+        <span className="text-xl font-bold text-text">
+          CryptoTracker
+        </span>
       </div>
 
-      <h1 className="text-lg font-semibold text-text mb-1">Sign in</h1>
+      <h1 className="text-lg font-semibold text-text mb-1">
+        Sign in
+      </h1>
+
       <p className="text-sm text-secondary mb-6">
         Welcome back. Enter your credentials to continue.
       </p>
@@ -78,12 +100,13 @@ export default function LoginForm() {
           <label className="block text-xs font-medium text-secondary mb-1.5">
             Email
           </label>
+
           <input
             type="email"
             required
             autoComplete="email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(event) => setEmail(event.target.value)}
             className="w-full bg-surface border border-white/10 rounded-lg px-3 py-2 text-sm text-text placeholder-secondary focus:outline-none focus:border-primary"
             placeholder="you@example.com"
           />
@@ -93,19 +116,23 @@ export default function LoginForm() {
           <label className="block text-xs font-medium text-secondary mb-1.5">
             Password
           </label>
+
           <input
             type="password"
             required
             autoComplete="current-password"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(event) => setPassword(event.target.value)}
             className="w-full bg-surface border border-white/10 rounded-lg px-3 py-2 text-sm text-text placeholder-secondary focus:outline-none focus:border-primary"
             placeholder="••••••••"
           />
         </div>
 
         {error && (
-          <div className="text-xs text-danger bg-danger/10 border border-danger/20 rounded-lg px-3 py-2">
+          <div
+            role="alert"
+            className="text-xs text-danger bg-danger/10 border border-danger/20 rounded-lg px-3 py-2"
+          >
             {error}
           </div>
         )}
@@ -122,7 +149,10 @@ export default function LoginForm() {
 
       <p className="text-sm text-secondary text-center mt-6">
         Don&apos;t have an account?{" "}
-        <Link href="/signup" className="text-primary hover:underline">
+        <Link
+          href="/signup"
+          className="text-primary hover:underline"
+        >
           Sign up
         </Link>
       </p>
