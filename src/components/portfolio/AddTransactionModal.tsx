@@ -1,3 +1,4 @@
+// src/components/portfolio/AddTransactionModal.tsx
 
 "use client";
 
@@ -16,7 +17,6 @@ import type { HoldingWithPrice } from "@/types/portfolio";
 
 interface AddTransactionModalProps {
   isOpen: boolean;
-  /** Enriched holdings — used to show "you hold X" hints on sell. */
   holdings: HoldingWithPrice[];
   onClose: () => void;
 }
@@ -26,13 +26,14 @@ export default function AddTransactionModal({
   holdings,
   onClose,
 }: AddTransactionModalProps) {
-  const { coins, isLoading } = useMarkets({ per_page: 100 });
+  const { coins, meta, isLoading } = useMarkets({ per_page: 100 });
 
   const [type, setType] = useState<"buy" | "sell">("buy");
   const [coinId, setCoinId] = useState("");
   const [price, setPrice] = useState("");
 
   const selectedCoin = coins.find((coin) => coin.id === coinId);
+
   const existingHolding = holdings.find(
     (holding) => holding.coinId === coinId
   );
@@ -51,14 +52,19 @@ export default function AddTransactionModal({
   const handleCoinChange = (nextCoinId: string) => {
     setCoinId(nextCoinId);
 
-    // Use the current market price as the initial value.
-    // Preserve an existing price so manual input is not overwritten.
+    // Only use a live, positive quote as a suggested execution price.
+    // A fallback or unavailable quote requires manual entry.
     if (!price) {
       const coin = coins.find((item) => item.id === nextCoinId);
 
-      if (coin) {
-        setPrice(coin.price.toString());
-      }
+      setPrice(
+        meta?.source === "live" &&
+          coin?.price !== null &&
+          coin?.price !== undefined &&
+          coin.price > 0
+          ? coin.price.toString()
+          : ""
+      );
     }
   };
 
@@ -75,6 +81,14 @@ export default function AddTransactionModal({
     return result;
   }, null);
 
+  const priceLabel = (value: number | null) => {
+    if (value === null) return "Price unavailable";
+
+    return meta?.source === "live"
+      ? formatPrice(value)
+      : `≈ ${formatPrice(value)} (fallback)`;
+  };
+
   return (
     <Modal
       isOpen={isOpen}
@@ -90,9 +104,8 @@ export default function AddTransactionModal({
         />
         <input type="hidden" name="type" value={type} />
 
-        {/* Type toggle */}
         <div>
-          <label className="block text-xs font-medium text-secondary mb-2">
+          <label className="mb-2 block text-xs font-medium text-secondary">
             Type
           </label>
 
@@ -100,10 +113,10 @@ export default function AddTransactionModal({
             <button
               type="button"
               onClick={() => setType("buy")}
-              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                 type === "buy"
-                  ? "bg-success/20 text-success border border-success/30"
-                  : "bg-surface border border-white/10 text-secondary"
+                  ? "border border-success/30 bg-success/20 text-success"
+                  : "border border-white/10 bg-surface text-secondary"
               }`}
             >
               Buy
@@ -112,10 +125,10 @@ export default function AddTransactionModal({
             <button
               type="button"
               onClick={() => setType("sell")}
-              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                 type === "sell"
-                  ? "bg-danger/20 text-danger border border-danger/30"
-                  : "bg-surface border border-white/10 text-secondary"
+                  ? "border border-danger/30 bg-danger/20 text-danger"
+                  : "border border-white/10 bg-surface text-secondary"
               }`}
             >
               Sell
@@ -123,9 +136,8 @@ export default function AddTransactionModal({
           </div>
         </div>
 
-        {/* Coin picker */}
         <div>
-          <label className="block text-xs font-medium text-secondary mb-2">
+          <label className="mb-2 block text-xs font-medium text-secondary">
             Coin
           </label>
 
@@ -136,46 +148,48 @@ export default function AddTransactionModal({
               value={coinId}
               onChange={(event) => handleCoinChange(event.target.value)}
               required
-              className="w-full bg-surface border border-white/10 rounded-lg px-3 py-2 text-sm text-text focus:outline-none focus:border-primary"
+              className="w-full rounded-lg border border-white/10 bg-surface px-3 py-2 text-sm text-text focus:border-primary focus:outline-none"
             >
               <option value="">Select a coin…</option>
 
               {coins.map((coin) => (
                 <option key={coin.id} value={coin.id}>
-                  {coin.symbol} — {coin.name} ({formatPrice(coin.price)})
+                  {coin.symbol} — {coin.name} ({priceLabel(coin.price)})
                 </option>
               ))}
             </select>
           )}
         </div>
 
-        {/* Selected coin banner with sell hint */}
         {selectedCoin && (
-          <div className="flex items-center gap-3 p-3 bg-white/[0.02] border border-white/5 rounded-lg">
+          <div className="flex items-center gap-3 rounded-lg border border-white/5 bg-white/[0.02] p-3">
             <CoinLogo
               src={selectedCoin.logoUrl}
               alt={selectedCoin.name}
               size="md"
             />
 
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-text truncate">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-text">
                 {selectedCoin.name}
               </p>
 
               <p className="text-xs text-secondary">
                 {type === "sell" && existingHolding
                   ? `You hold ${formatQuantity(existingHolding.quantity)} ${existingHolding.symbol}`
-                  : `Market price: ${formatPrice(selectedCoin.price)}`}
+                  : selectedCoin.price === null
+                    ? "Market price unavailable — enter transaction price manually"
+                    : meta?.source === "live"
+                      ? `Live market price: ${formatPrice(selectedCoin.price)}`
+                      : `Indicative fallback price: ${formatPrice(selectedCoin.price)}`}
               </p>
             </div>
           </div>
         )}
 
-        {/* Quantity + price */}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-secondary mb-2">
+            <label className="mb-2 block text-xs font-medium text-secondary">
               Quantity
             </label>
 
@@ -186,12 +200,12 @@ export default function AddTransactionModal({
               min="0"
               required
               placeholder="0.5"
-              className="w-full bg-surface border border-white/10 rounded-lg px-3 py-2 text-sm text-text placeholder-secondary focus:outline-none focus:border-primary"
+              className="w-full rounded-lg border border-white/10 bg-surface px-3 py-2 text-sm text-text placeholder-secondary focus:border-primary focus:outline-none"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-secondary mb-2">
+            <label className="mb-2 block text-xs font-medium text-secondary">
               Price per unit (USD)
             </label>
 
@@ -203,32 +217,36 @@ export default function AddTransactionModal({
               required
               value={price}
               onChange={(event) => setPrice(event.target.value)}
-              placeholder="65000"
-              className="w-full bg-surface border border-white/10 rounded-lg px-3 py-2 text-sm text-text placeholder-secondary focus:outline-none focus:border-primary"
+              placeholder="Enter execution price"
+              className="w-full rounded-lg border border-white/10 bg-surface px-3 py-2 text-sm text-text placeholder-secondary focus:border-primary focus:outline-none"
             />
           </div>
         </div>
 
-        {/* Executed at */}
+        <p className="text-xs text-secondary">
+          Record the actual execution price for the trade. A market quote
+          is only a suggestion and may differ from your execution.
+        </p>
+
         <div>
-          <label className="block text-xs font-medium text-secondary mb-2">
+          <label className="mb-2 block text-xs font-medium text-secondary">
             When
           </label>
 
           <input
             type="datetime-local"
             name="executedAt"
-            className="w-full bg-surface border border-white/10 rounded-lg px-3 py-2 text-sm text-text focus:outline-none focus:border-primary"
+            className="w-full rounded-lg border border-white/10 bg-surface px-3 py-2 text-sm text-text focus:border-primary focus:outline-none"
           />
 
-          <p className="text-xs text-secondary mt-1">
-            Leave blank for now — useful for backfilling historical trades.
+          <p className="mt-1 text-xs text-secondary">
+            Leave blank to use the current time. Enter a date to backfill
+            a historical trade.
           </p>
         </div>
 
-        {/* Notes */}
         <div>
-          <label className="block text-xs font-medium text-secondary mb-2">
+          <label className="mb-2 block text-xs font-medium text-secondary">
             Notes (optional)
           </label>
 
@@ -237,17 +255,17 @@ export default function AddTransactionModal({
             name="notes"
             maxLength={500}
             placeholder="e.g. DCA buy"
-            className="w-full bg-surface border border-white/10 rounded-lg px-3 py-2 text-sm text-text placeholder-secondary focus:outline-none focus:border-primary"
+            className="w-full rounded-lg border border-white/10 bg-surface px-3 py-2 text-sm text-text placeholder-secondary focus:border-primary focus:outline-none"
           />
         </div>
 
         {state && "error" in state && (
-          <div className="text-xs text-danger bg-danger/10 border border-danger/20 rounded-lg px-3 py-2">
+          <div className="rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-xs text-danger">
             {state.error}
           </div>
         )}
 
-        <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/5">
+        <div className="flex items-center justify-end gap-3 border-t border-white/5 pt-4">
           <Button
             type="button"
             variant="secondary"

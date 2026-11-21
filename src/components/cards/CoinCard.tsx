@@ -1,20 +1,7 @@
 // src/components/cards/CoinCard.tsx
 //
 // Coin card for the Watchlist grid.
-//
-// Accepts a MarketCoin (the same shape used everywhere prices are shown)
-// so it works identically for live and fallback data — no shape-switching
-// logic at the call site.
-//
-// ─── Remove semantics ────────────────────────────────────────────────────
-// The star is a "currently in watchlist" indicator, not a toggle. Clicking
-// it removes the coin from the watchlist; the card disappears because the
-// parent's coin list shrinks. There is no in-between "not in watchlist but
-// still visible" state — that would be confusing (the visual dimming that
-// existed before DB persistence was a placeholder).
-//
-// No confirmation dialog: removing a watchlist entry is trivially
-// recoverable (re-add from the Add modal) and shouldn't require ceremony.
+// Missing market values are displayed as unavailable, never as zero.
 
 "use client";
 
@@ -33,22 +20,27 @@ interface CoinCardProps {
   onRemove: (coinId: string) => void;
 }
 
-export default function CoinCard({ coin, onRemove }: CoinCardProps) {
+export default function CoinCard({
+  coin,
+  onRemove,
+}: CoinCardProps) {
   return (
     <Card hover gradientBorder className="flex flex-col">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex min-w-0 items-center gap-3">
           <CoinLogo src={coin.logoUrl} alt={coin.name} size="lg" />
+
           <div className="min-w-0">
-            <p className="text-sm font-medium text-text truncate">
+            <p className="truncate text-sm font-medium text-text">
               {coin.name}
             </p>
             <p className="text-xs text-secondary">{coin.symbol}</p>
           </div>
         </div>
+
         <button
           onClick={() => onRemove(coin.id)}
-          className="text-lg text-yellow-400 hover:text-secondary transition-colors flex-shrink-0"
+          className="flex-shrink-0 text-lg text-yellow-400 transition-colors hover:text-secondary"
           aria-label={`Remove ${coin.name} from watchlist`}
           title="Remove from watchlist"
         >
@@ -58,15 +50,23 @@ export default function CoinCard({ coin, onRemove }: CoinCardProps) {
 
       <div className="mt-4">
         <p className="text-2xl font-bold text-text">
-          {formatPrice(coin.price)}
+          {coin.price === null ? "—" : formatPrice(coin.price)}
         </p>
-        <div className="flex items-center gap-2 mt-2">
-          <Badge
-            variant={coin.change24h >= 0 ? "success" : "danger"}
-            size="sm"
-          >
-            {formatPercent(coin.change24h)}
-          </Badge>
+
+        <div className="mt-2 flex items-center gap-2">
+          {coin.change24h === null ? (
+            <span className="text-xs text-secondary">
+              24h change unavailable
+            </span>
+          ) : (
+            <Badge
+              variant={coin.change24h >= 0 ? "success" : "danger"}
+              size="sm"
+            >
+              {formatPercent(coin.change24h)}
+            </Badge>
+          )}
+
           <span className="text-xs text-secondary">
             MCap {formatCompactCurrency(coin.marketCap)}
           </span>

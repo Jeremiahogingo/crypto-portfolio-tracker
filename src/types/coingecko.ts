@@ -19,7 +19,7 @@ export interface CGMarketCoin {
   name: string;
   image: string;
 
-  current_price: number;
+  current_price: number | null;
   market_cap: number;
   market_cap_rank: number;
   total_volume: number;
@@ -27,7 +27,7 @@ export interface CGMarketCoin {
   high_24h: number;
   low_24h: number;
   price_change_24h: number;
-  price_change_percentage_24h: number;
+  price_change_percentage_24h: number | null;
 
   circulating_supply: number;
   total_supply: number | null;
@@ -40,7 +40,6 @@ export interface CGMarketCoin {
 
   last_updated: string;
 
-  /** Only present when `sparkline=true` is passed to /coins/markets. */
   sparkline_in_7d?: {
     price: number[];
   };

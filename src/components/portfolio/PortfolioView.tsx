@@ -2,14 +2,9 @@
 //
 // Client orchestrator for the Portfolio page.
 //
-// Two entry points for changing a position:
-//   • "Add holding" — sets an initial position (2.4a). Use for backfilling
-//     existing holdings without recording every historical trade.
-//   • "Record transaction" — records an actual buy or sell against the
-//     ledger (this step). Use for ongoing activity.
-//
-// Both reconcile through recomputeHolding, so the dashboard, portfolio,
-// and analytics always agree.
+// Ledger values (quantity and cost basis) remain available independently
+// of market-data availability. Current valuation and unrealised P&L are
+// displayed only when their price requirements are satisfied.
 
 "use client";
 
@@ -49,19 +44,47 @@ export default function PortfolioView({
 
   const [addHoldingOpen, setAddHoldingOpen] = useState(false);
   const [addTransactionOpen, setAddTransactionOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<HoldingWithPrice | null>(null);
-  const [deleteHoldingTarget, setDeleteHoldingTarget] =
-    useState<HoldingWithPrice | null>(null);
-  const [deleteTransactionTarget, setDeleteTransactionTarget] =
-    useState<Transaction | null>(null);
+const [editTarget, setEditTarget] =
+  useState<HoldingWithPrice | null>(null);
+const [deleteHoldingTarget, setDeleteHoldingTarget] =
+  useState<HoldingWithPrice | null>(null);
+const [deleteTransactionTarget, setDeleteTransactionTarget] =
+  useState<Transaction | null>(null);
+
+
+  const hasHoldings = summary.assetCount > 0;
+  const hasCompleteValuation = summary.totalValue !== null;
+
+  const displayedPortfolioValue =
+    summary.totalValue !== null
+      ? formatPrice(summary.totalValue)
+      : summary.knownValue > 0
+        ? formatPrice(summary.knownValue)
+        : !hasHoldings
+          ? "$0.00"
+          : isLoadingPrices
+            ? "Loading…"
+            : "Unavailable";
+
+  const portfolioValueLabel =
+    !hasHoldings || hasCompleteValuation
+      ? "Total Value"
+      : summary.knownValue > 0
+        ? "Verified Value (partial)"
+        : "Total Value";
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-text">Portfolio</h1>
-          <p className="text-sm text-secondary mt-1">{portfolioName}</p>
+          <h1 className="text-2xl font-bold text-text">
+            Portfolio
+          </h1>
+          <p className="mt-1 text-sm text-secondary">
+            {portfolioName}
+          </p>
         </div>
+
         <div className="flex gap-2">
           <Button
             variant="secondary"
@@ -69,6 +92,7 @@ export default function PortfolioView({
           >
             + Add holding
           </Button>
+
           <Button
             variant="primary"
             onClick={() => setAddTransactionOpen(true)}
@@ -78,55 +102,112 @@ export default function PortfolioView({
         </div>
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Portfolio summary */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card hover gradientBorder>
-          <p className="text-sm text-secondary">Total Value</p>
-          <p className="text-2xl font-bold text-text mt-1">
-            {formatPrice(summary.totalValue)}
+          <p className="text-sm text-secondary">
+            {portfolioValueLabel}
           </p>
+
+          <p className="mt-1 text-2xl font-bold text-text">
+            {displayedPortfolioValue}
+          </p>
+
           {summary.assetCount > 0 && (
-            <p className="text-xs text-secondary mt-1">
-              {summary.assetCount} asset{summary.assetCount === 1 ? "" : "s"}
+            <p className="mt-1 text-xs text-secondary">
+              {summary.assetCount}{" "}
+              {summary.assetCount === 1 ? "asset" : "assets"}
+            </p>
+          )}
+
+          {!summary.hasCompleteValuation && hasHoldings && (
+            <p className="mt-2 text-xs text-secondary">
+              {summary.pricedCount} of {summary.totalHoldings} holdings
+              have verified live prices.
+              {summary.fallbackCount > 0 &&
+                ` ${summary.fallbackCount} have fallback prices.`}
+              {summary.unavailableCount > 0 &&
+                ` ${summary.unavailableCount} are unavailable.`}
             </p>
           )}
         </Card>
+
         <Card hover>
-          <p className="text-sm text-secondary">Total Cost</p>
-          <p className="text-2xl font-bold text-text mt-1">
+          <p className="text-sm text-secondary">
+            Total Cost
+          </p>
+
+          <p className="mt-1 text-2xl font-bold text-text">
             {formatPrice(summary.totalCost)}
           </p>
+
+          <p className="mt-1 text-xs text-secondary">
+            Based on recorded remaining cost basis
+          </p>
         </Card>
+
         <Card hover>
-          <p className="text-sm text-secondary">Unrealised P&amp;L</p>
+          <p className="text-sm text-secondary">
+            Unrealised P&amp;L
+          </p>
+
           <p
-            className={`text-2xl font-bold mt-1 ${
-              summary.totalPnl >= 0 ? "text-success" : "text-danger"
+            className={`mt-1 text-2xl font-bold ${
+              summary.totalPnl === null
+                ? "text-text"
+                : summary.totalPnl >= 0
+                  ? "text-success"
+                  : "text-danger"
             }`}
           >
-            {formatSignedCurrency(summary.totalPnl)}
+            {summary.totalPnl === null
+              ? "Unavailable"
+              : formatSignedCurrency(summary.totalPnl)}
           </p>
-          {summary.totalCost > 0 && (
+
+          {summary.totalPnlPercent !== null && (
             <Badge
-              variant={summary.totalPnl >= 0 ? "success" : "danger"}
+              variant={summary.totalPnl! >= 0 ? "success" : "danger"}
               className="mt-2"
             >
               {formatPercent(summary.totalPnlPercent)}
             </Badge>
           )}
+
+          {summary.totalPnl === null && hasHoldings && (
+            <p className="mt-2 text-xs text-secondary">
+              A complete live valuation is required to calculate total P&amp;L.
+            </p>
+          )}
         </Card>
+
         <Card hover>
-          <p className="text-sm text-secondary">24h Change</p>
+          <p className="text-sm text-secondary">
+            24h Change
+          </p>
+
           <p
-            className={`text-2xl font-bold mt-1 ${
-              summary.change24hValue >= 0 ? "text-success" : "text-danger"
+            className={`mt-1 text-2xl font-bold ${
+              summary.change24hValue === null
+                ? "text-text"
+                : summary.change24hValue >= 0
+                  ? "text-success"
+                  : "text-danger"
             }`}
           >
-            {formatSignedCurrency(summary.change24hValue)}
+            {summary.change24hValue === null
+              ? "Unavailable"
+              : formatSignedCurrency(summary.change24hValue)}
           </p>
-          {summary.totalValue > 0 && (
+
+          {summary.change24hPercent !== null && (
             <Badge
-              variant={summary.change24hValue >= 0 ? "success" : "danger"}
+              variant={
+                summary.change24hValue !== null &&
+                summary.change24hValue >= 0
+                  ? "success"
+                  : "danger"
+              }
               className="mt-2"
             >
               {formatPercent(summary.change24hPercent)}
@@ -136,12 +217,18 @@ export default function PortfolioView({
       </div>
 
       <Card>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-text">Holdings</h3>
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-text">
+            Holdings
+          </h3>
+
           {isLoadingPrices && holdings.length > 0 && (
-            <span className="text-xs text-secondary">Updating prices…</span>
+            <span className="text-xs text-secondary">
+              Updating prices…
+            </span>
           )}
         </div>
+
         <HoldingsTable
           holdings={holdings}
           isLoadingPrices={isLoadingPrices}
@@ -152,9 +239,10 @@ export default function PortfolioView({
       </Card>
 
       <Card>
-        <h3 className="text-sm font-semibold text-text mb-4">
+        <h3 className="mb-4 text-sm font-semibold text-text">
           Transaction History
         </h3>
+
         <TransactionHistory
           transactions={initialTransactions}
           onDelete={setDeleteTransactionTarget}
@@ -165,21 +253,25 @@ export default function PortfolioView({
         isOpen={addHoldingOpen}
         onClose={() => setAddHoldingOpen(false)}
       />
+
       <AddTransactionModal
         isOpen={addTransactionOpen}
         holdings={holdings}
         onClose={() => setAddTransactionOpen(false)}
       />
+
       <EditHoldingModal
         isOpen={Boolean(editTarget)}
         holding={editTarget}
         onClose={() => setEditTarget(null)}
       />
+
       <DeleteHoldingModal
         isOpen={Boolean(deleteHoldingTarget)}
         holding={deleteHoldingTarget}
         onClose={() => setDeleteHoldingTarget(null)}
       />
+
       <DeleteTransactionModal
         isOpen={Boolean(deleteTransactionTarget)}
         transaction={deleteTransactionTarget}

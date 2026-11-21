@@ -1,82 +1,113 @@
 // src/components/dashboard/PortfolioSnapshot.tsx
 //
-// Dashboard top-of-page metrics. Takes raw holdings from the server,
-// enriches with live prices, renders 4 stat cards.
+// Dashboard portfolio metrics.
 //
-// Why a client component wrapper (not four individual cards): the four
-// values are derived from the same summary object — splitting them would
-// mean four separate market queries. One hook call, one query, four cards.
+// A complete portfolio value is shown only when every active holding has
+// a live quote. When valuation is incomplete, the card shows the known
+// live-priced portion and labels it as partial.
 
 "use client";
 
 import StatCard from "@/components/dashboard/StatCard";
 import { useHoldingsWithPrices } from "@/hooks/useHoldingsWithPrices";
-import { formatPrice, formatSignedCurrency, formatPercent } from "@/utils/format";
+import {
+  formatPrice,
+  formatSignedCurrency,
+  formatPercent,
+} from "@/utils/format";
 import type { Holding } from "@/db/schema";
 
 interface PortfolioSnapshotProps {
   rawHoldings: Holding[];
 }
 
-export default function PortfolioSnapshot({ rawHoldings }: PortfolioSnapshotProps) {
-  const { summary, isLoadingPrices } = useHoldingsWithPrices(rawHoldings);
+export default function PortfolioSnapshot({
+  rawHoldings,
+}: PortfolioSnapshotProps) {
+  const { summary, isLoadingPrices } =
+    useHoldingsWithPrices(rawHoldings);
 
-  // Show the top-of-page numbers with 0s and a hint when there's no data,
-  // rather than hiding the cards. A new user needs to see that these
-  // numbers will exist once they add holdings.
-  const hasHoldings = rawHoldings.length > 0;
+  const hasHoldings = summary.assetCount > 0;
+
+  const portfolioValue =
+    summary.totalValue !== null
+      ? formatPrice(summary.totalValue)
+      : summary.knownValue > 0
+        ? formatPrice(summary.knownValue)
+        : !hasHoldings
+          ? "$0.00"
+          : isLoadingPrices
+            ? "Loading…"
+            : "Unavailable";
+
+  const portfolioTitle =
+    summary.totalValue !== null || !hasHoldings
+      ? "Portfolio Value"
+      : summary.knownValue > 0
+        ? "Known Value (partial)"
+        : "Portfolio Value";
+
+  const change24hValue =
+    summary.change24hValue === null
+      ? hasHoldings
+        ? "Unavailable"
+        : "$0.00"
+      : formatSignedCurrency(summary.change24hValue);
+
+  const pnlValue =
+    summary.totalPnl === null
+      ? hasHoldings
+        ? "Unavailable"
+        : "$0.00"
+      : formatSignedCurrency(summary.totalPnl);
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
       <StatCard
-        title="Portfolio Value"
-        value={
-          !hasHoldings
-            ? "$0.00"
-            : isLoadingPrices && summary.totalValue === 0
-            ? "—"
-            : formatPrice(summary.totalValue)
-        }
+        title={portfolioTitle}
+        value={portfolioValue}
         change={
-          hasHoldings && summary.totalValue > 0
+          summary.change24hPercent !== null
             ? formatPercent(summary.change24hPercent)
             : undefined
         }
-        positive={summary.change24hPercent >= 0}
+        positive={
+          summary.change24hValue === null ||
+          summary.change24hValue >= 0
+        }
         icon="💰"
       />
+
       <StatCard
         title="24h Change"
-        value={
-          !hasHoldings
-            ? "$0.00"
-            : isLoadingPrices && summary.totalValue === 0
-            ? "—"
-            : formatSignedCurrency(summary.change24hValue)
+        value={change24hValue}
+        positive={
+          summary.change24hValue === null ||
+          summary.change24hValue >= 0
         }
         icon="📈"
-        positive={summary.change24hValue >= 0}
       />
+
       <StatCard
         title="Unrealised P&L"
-        value={
-          !hasHoldings
-            ? "$0.00"
-            : isLoadingPrices && summary.totalValue === 0
-            ? "—"
-            : formatSignedCurrency(summary.totalPnl)
-        }
+        value={pnlValue}
         change={
-          hasHoldings && summary.totalCost > 0
+          summary.totalPnlPercent !== null
             ? formatPercent(summary.totalPnlPercent)
             : undefined
         }
-        positive={summary.totalPnl >= 0}
+        positive={
+          summary.totalPnl === null ||
+          summary.totalPnl >= 0
+        }
         icon="🏆"
       />
+
       <StatCard
         title="Assets"
-        value={`${summary.assetCount} ${summary.assetCount === 1 ? "coin" : "coins"}`}
+        value={`${summary.assetCount} ${
+          summary.assetCount === 1 ? "coin" : "coins"
+        }`}
         icon="🪙"
         positive
       />

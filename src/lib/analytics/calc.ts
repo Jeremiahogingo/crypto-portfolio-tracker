@@ -2,32 +2,22 @@
 //
 // Pure analytics computations. No DB, no HTTP, no React.
 //
-// Each function takes rows already in memory and returns chart-ready data.
-// This mirrors src/lib/portfolio/calc.ts — same philosophy: if a business
-// rule lives in one place, one test, and one definition, it can't drift
-// between dashboard, analytics, and portfolio views.
+// Current valuation metrics are separated from ledger-derived metrics.
+// Transaction-derived investment and activity remain calculable regardless
+// of whether market prices are available.
 //
-// ─── Honesty constraint ──────────────────────────────────────────────────
-// Everything in this file is computable from (holdings + transactions +
-// live prices). We deliberately do NOT compute "historical portfolio value"
-// or "daily profit" — those require snapshots we don't store. See the
-// Phase 5 plan for the historical-snapshot infrastructure.
-//
-// ─── Windowing ───────────────────────────────────────────────────────────
-// Timeline and activity charts cap at the last 12 months. Users with
-// 5-year histories would otherwise get 60-bar charts that are unreadable.
-// The cap is a display decision, not a data decision — the full ledger
-// still exists in the transactions table.
+// Fallback prices are indicative only.
+// Missing prices are unknown, never implicit zeroes.
 
 import type { Transaction } from "@/db/schema";
 import type { HoldingWithPrice } from "@/types/portfolio";
 
-// ─── Types ───────────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 export interface InvestmentPoint {
-  /** Short label like "Oct 26". */
   month: string;
-  /** Cumulative net invested through the end of this month, in USD. */
   cumulative: number;
 }
 
@@ -53,166 +43,349 @@ export interface ConcentrationEntry {
 }
 
 export interface AnalyticsSummary {
-  /**
-   * Cumulative USD spent on buys minus USD received from sells.
-   * Can be negative (user has realized more than they've put in) — that's
-   * a correct and informative value, not a bug.
-   */
+  /** Cumulative BUY value less SELL proceeds, derived from the ledger. */
   totalInvested: number;
-  currentValue: number;
-  totalPnl: number;
-  totalPnlPercent: number;
-  bestPerformer: { symbol: string; roiPercent: number } | null;
-  worstPerformer: { symbol: string; roiPercent: number } | null;
+
+  /** Complete verified portfolio value; null when valuation is incomplete. */
+  currentValue: number | null;
+
+  /** Value of positions with verified live prices only. */
+  knownValue: number;
+
+  /** Indicative value of fallback-priced positions. */
+  indicativeValue: number;
+
+  /** Ledger-derived remaining cost basis. */
+  totalCost: number;
+
+  /** Null unless all active positions have verified live prices. */
+  totalPnl: number | null;
+
+  /** Null when total P&L or its denominator is unavailable. */
+  totalPnlPercent: number | null;
+
+  pricedCount: number;
+  fallbackCount: number;
+  unavailableCount: number;
+  totalHoldings: number;
+  valuationCoverage: number;
+  hasCompleteValuation: boolean;
+
+  bestPerformer: {
+    symbol: string;
+    roiPercent: number;
+  } | null;
+
+  worstPerformer: {
+    symbol: string;
+    roiPercent: number;
+  } | null;
 }
-
-// ─── Helpers ─────────────────────────────────────────────────────────────
-
-const MONTH_NAMES = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
 
 /**
- * "2026-10" → "Oct 26".
- * Year suffix disambiguates across multi-year timelines without making
- * labels long enough to overlap on the x-axis.
+ * A holding that has a verified live quote and all derived financial values.
+ *
+ * This type is intentionally narrower than HoldingWithPrice. It is used
+ * only after a runtime check has established that nullable values exist.
  */
+type VerifiedHolding = HoldingWithPrice & {
+  currentValue: number;
+  pnl: number;
+  pnlPercent: number;
+};
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const MONTH_NAMES = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+/** "2026-10" -> "Oct 26". */
 function formatMonthKey(key: string): string {
   const [year, month] = key.split("-");
-  const idx = Number(month) - 1;
-  return `${MONTH_NAMES[idx] ?? month} ${year.slice(-2)}`;
+  const index = Number(month) - 1;
+
+  return `${MONTH_NAMES[index] ?? month} ${year.slice(-2)}`;
 }
 
-/** Sortable YYYY-MM key for a date — used to bucket by month. */
+/** Sortable YYYY-MM key for a date. */
 function monthKey(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  return `${date.getFullYear()}-${String(
+    date.getMonth() + 1
+  ).padStart(2, "0")}`;
 }
 
-// ─── Summary ─────────────────────────────────────────────────────────────
+function sum(values: readonly number[]): number {
+  return values.reduce((total, value) => total + value, 0);
+}
+
+/**
+ * Runtime type guard.
+ *
+ * IMPORTANT:
+ * Use this function directly as the Array.filter callback.
+ * That makes TypeScript infer VerifiedHolding[] for all subsequent
+ * operations instead of retaining nullable financial fields.
+ */
+function isVerifiedValuation(
+  holding: HoldingWithPrice
+): holding is VerifiedHolding {
+  return (
+    holding.priceStatus === "live" &&
+    holding.currentValue !== null &&
+    Number.isFinite(holding.currentValue) &&
+    holding.pnl !== null &&
+    Number.isFinite(holding.pnl) &&
+    holding.pnlPercent !== null &&
+    Number.isFinite(holding.pnlPercent)
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Summary
+// ---------------------------------------------------------------------------
 
 export function computeAnalyticsSummary(
   holdings: HoldingWithPrice[],
   transactions: Transaction[]
 ): AnalyticsSummary {
-  const totalInvested = transactions.reduce((sum, tx) => {
-    const value = Number(tx.totalValue);
+  // Net investment is based on ledger activity, not market prices.
+  const totalInvested = transactions.reduce(
+    (sumValue, transaction) => {
+      const value = Number(transaction.totalValue);
 
-    if (tx.type === "buy") return sum + value;
-    if (tx.type === "sell") return sum - value;
+      if (!Number.isFinite(value)) {
+        return sumValue;
+      }
 
-    // ADJUSTMENT changes the recorded position, not cash invested.
-    return sum;
-  }, 0);
+      if (transaction.type === "buy") {
+        return sumValue + value;
+      }
 
-  const currentValue = holdings.reduce((s, h) => s + h.currentValue, 0);
-  const totalCost = holdings.reduce((s, h) => s + h.costTotal, 0);
-  const totalPnl = currentValue - totalCost;
-  const totalPnlPercent = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
+      if (transaction.type === "sell") {
+        return sumValue - value;
+      }
 
-  // Best/worst performer only considers positions where P&L is meaningful —
-  // airdropped coins with costBasis 0 have undefined ROI and would sort as
-  // infinite; a delisted coin with currentValue 0 has -100% ROI which
-  // dominates the "worst" slot misleadingly.
-  const performers = holdings
-    .filter((h) => h.costTotal > 0 && h.currentValue > 0)
+      // ADJUSTMENT changes a recorded position, not cash invested.
+      return sumValue;
+    },
+    0
+  );
+
+  const activeHoldings = holdings.filter(
+    (holding) => holding.quantity !== 0
+  );
+
+  const liveHoldings = activeHoldings.filter(
+    (holding) =>
+      holding.priceStatus === "live" &&
+      holding.currentValue !== null
+  );
+
+  const fallbackHoldings = activeHoldings.filter(
+    (holding) =>
+      holding.priceStatus === "fallback" &&
+      holding.currentValue !== null
+  );
+
+  const unavailableHoldings = activeHoldings.filter(
+    (holding) =>
+      holding.priceStatus === "unavailable" ||
+      holding.currentValue === null
+  );
+
+  const knownValue = sum(
+    liveHoldings.map((holding) => holding.currentValue!)
+  );
+
+  const indicativeValue = sum(
+    fallbackHoldings.map((holding) => holding.currentValue!)
+  );
+
+  const totalCost = sum(
+    activeHoldings.map((holding) => holding.costTotal)
+  );
+
+  const hasCompleteValuation =
+    fallbackHoldings.length === 0 &&
+    unavailableHoldings.length === 0;
+
+  // Empty portfolios have a complete zero valuation.
+  // Incomplete portfolios must not show a fabricated total.
+  const currentValue = hasCompleteValuation
+    ? knownValue
+    : null;
+
+  const totalPnl =
+    currentValue === null
+      ? null
+      : currentValue - totalCost;
+
+  const totalPnlPercent =
+    totalPnl !== null && totalCost > 0
+      ? (totalPnl / totalCost) * 100
+      : null;
+
+  // The direct type-predicate callback narrows every result to
+  // VerifiedHolding, making the sort and result fields non-nullable.
+  const performers = activeHoldings
+    .filter(isVerifiedValuation)
+    .filter((holding) => holding.costTotal > 0)
     .sort((a, b) => b.pnlPercent - a.pnlPercent);
+
+  const pricedCount = liveHoldings.length;
+  const fallbackCount = fallbackHoldings.length;
+  const unavailableCount = unavailableHoldings.length;
+  const totalHoldings = activeHoldings.length;
+
+  const best = performers[0];
+  const worst = performers[performers.length - 1];
 
   return {
     totalInvested,
     currentValue,
+    knownValue,
+    indicativeValue,
+    totalCost,
     totalPnl,
     totalPnlPercent,
-    bestPerformer: performers[0]
-      ? { symbol: performers[0].symbol, roiPercent: performers[0].pnlPercent }
-      : null,
-    worstPerformer: performers[performers.length - 1]
+    pricedCount,
+    fallbackCount,
+    unavailableCount,
+    totalHoldings,
+    valuationCoverage:
+      totalHoldings === 0
+        ? 100
+        : (pricedCount / totalHoldings) * 100,
+    hasCompleteValuation,
+    bestPerformer: best
       ? {
-          symbol: performers[performers.length - 1].symbol,
-          roiPercent: performers[performers.length - 1].pnlPercent,
+          symbol: best.symbol,
+          roiPercent: best.pnlPercent,
+        }
+      : null,
+    worstPerformer: worst
+      ? {
+          symbol: worst.symbol,
+          roiPercent: worst.pnlPercent,
         }
       : null,
   };
 }
 
-// ─── Investment Timeline ─────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Investment timeline
+// ---------------------------------------------------------------------------
 
 /**
  * Cumulative net invested per month, last 12 months.
  *
- * Walk transactions in chronological order, maintaining a running total:
- *   buy  → running += totalValue
- *   sell → running -= totalValue
- *
- * The result is the classic "how much have I put into crypto" line. It
- * answers a different question than "how much is my portfolio worth" —
- * users often want both, and we only have data for the first.
+ * BUY        -> increase cumulative investment.
+ * SELL       -> decrease cumulative investment.
+ * ADJUSTMENT -> no effect on cash invested.
  */
 export function computeInvestmentTimeline(
   transactions: Transaction[]
 ): InvestmentPoint[] {
-  if (transactions.length === 0) return [];
+  if (transactions.length === 0) {
+    return [];
+  }
 
   const sorted = [...transactions].sort(
     (a, b) =>
-      new Date(a.executedAt).getTime() - new Date(b.executedAt).getTime()
+      new Date(a.executedAt).getTime() -
+      new Date(b.executedAt).getTime()
   );
 
   const byMonth = new Map<string, number>();
   let cumulative = 0;
 
-  for (const tx of sorted) {
-    // Corrections are not deposits or withdrawals and must not alter this
-    // cumulative investment timeline or create adjustment-only months.
-    if (tx.type === "adjustment") continue;
+  for (const transaction of sorted) {
+    if (transaction.type === "adjustment") {
+      continue;
+    }
 
-    const value = Number(tx.totalValue);
+    const value = Number(transaction.totalValue);
 
-    if (tx.type === "buy") {
+    if (!Number.isFinite(value)) {
+      continue;
+    }
+
+    if (transaction.type === "buy") {
       cumulative += value;
     } else {
       cumulative -= value;
     }
 
-    // Last write wins for the month — we want the cumulative at the END of
-    // the month, not at the first transaction in it.
-    byMonth.set(monthKey(new Date(tx.executedAt)), cumulative);
+    // Last write wins for the month: retain the cumulative value
+    // at the end of that month's transactions.
+    byMonth.set(
+      monthKey(new Date(transaction.executedAt)),
+      cumulative
+    );
   }
 
   return Array.from(byMonth.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .slice(-12)
-    .map(([key, val]) => ({
+    .map(([key, value]) => ({
       month: formatMonthKey(key),
-      cumulative: val,
+      cumulative: value,
     }));
 }
 
-// ─── Monthly Activity ────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Monthly activity
+// ---------------------------------------------------------------------------
 
 /**
- * Buy and sell totals per month, last 12 months.
- *
- * Distinct from the timeline: activity shows *pace* (am I trading more this
- * month?), timeline shows *position* (am I net in or out?). Users care
- * about both.
+ * BUY and SELL totals per month, last 12 months.
+ * ADJUSTMENT events do not create trading activity.
  */
 export function computeMonthlyActivity(
   transactions: Transaction[]
 ): ActivityPoint[] {
-  if (transactions.length === 0) return [];
+  if (transactions.length === 0) {
+    return [];
+  }
 
-  const byMonth = new Map<string, { buys: number; sells: number }>();
+  const byMonth = new Map<
+    string,
+    { buys: number; sells: number }
+  >();
 
-  for (const tx of transactions) {
-    // Do not create empty activity buckets for correction-only months.
-    if (tx.type === "adjustment") continue;
+  for (const transaction of transactions) {
+    if (transaction.type === "adjustment") {
+      continue;
+    }
 
-    const key = monthKey(new Date(tx.executedAt));
-    const bucket = byMonth.get(key) ?? { buys: 0, sells: 0 };
-    const value = Number(tx.totalValue);
+    const value = Number(transaction.totalValue);
 
-    if (tx.type === "buy") {
+    if (!Number.isFinite(value)) {
+      continue;
+    }
+
+    const key = monthKey(new Date(transaction.executedAt));
+
+    const bucket = byMonth.get(key) ?? {
+      buys: 0,
+      sells: 0,
+    };
+
+    if (transaction.type === "buy") {
       bucket.buys += value;
     } else {
       bucket.sells += value;
@@ -231,59 +404,74 @@ export function computeMonthlyActivity(
     }));
 }
 
-// ─── Asset Performance ───────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Asset performance
+// ---------------------------------------------------------------------------
 
 /**
  * ROI per current holding, sorted best to worst.
  *
- * Filters out positions where ROI is undefined or misleading:
- *   • costTotal = 0  (airdrops)    → ROI is infinite, exclude
- *   • currentValue = 0 (delisted)  → ROI is -100%, exclude to avoid
- *                                    dominating "worst performer"
+ * Only verified live-priced holdings with positive cost basis are included.
+ * Fallback and unavailable positions are excluded.
+ *
+ * A genuine live zero price remains valid and can correctly represent
+ * a 100% loss.
  */
 export function computeAssetPerformance(
   holdings: HoldingWithPrice[]
 ): PerformanceEntry[] {
   return holdings
-    .filter((h) => h.costTotal > 0 && h.currentValue > 0)
-    .map((h) => ({
-      symbol: h.symbol,
-      coinId: h.coinId,
-      roiPercent: h.pnlPercent,
-      pnl: h.pnl,
-      value: h.currentValue,
-      cost: h.costTotal,
+    .filter(isVerifiedValuation)
+    .filter((holding) => holding.costTotal > 0)
+    .map((holding) => ({
+      symbol: holding.symbol,
+      coinId: holding.coinId,
+      roiPercent: holding.pnlPercent,
+      pnl: holding.pnl,
+      value: holding.currentValue,
+      cost: holding.costTotal,
     }))
     .sort((a, b) => b.roiPercent - a.roiPercent);
 }
 
-// ─── Concentration ───────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Concentration
+// ---------------------------------------------------------------------------
 
 /**
- * Top N holdings by current value, as percentage of portfolio.
+ * Top N holdings by current value as a percentage of the live-priced subset.
  *
- * This is the honest replacement for the old "Risk Distribution" chart.
- * Over-concentration in one coin is the primary risk a retail portfolio
- * faces — this chart shows it directly. A "risk" classification (low/
- * medium/high) would be subjective; concentration is objective.
- *
- * Sorted descending so the largest positions dominate the chart visually
- * (which is the point — they represent the biggest risk).
+ * It is deliberately not described as the percentage of the entire
+ * portfolio if any holding lacks a verified live quote.
  */
 export function computeConcentration(
   holdings: HoldingWithPrice[],
   topN = 8
 ): ConcentrationEntry[] {
-  const total = holdings.reduce((s, h) => s + h.currentValue, 0);
-  if (total <= 0) return [];
+  const livePricedHoldings = holdings.filter(
+    (holding) =>
+      holding.quantity !== 0 &&
+      holding.priceStatus === "live" &&
+      holding.currentValue !== null &&
+      holding.currentValue > 0
+  );
 
-  return holdings
-    .filter((h) => h.currentValue > 0)
-    .sort((a, b) => b.currentValue - a.currentValue)
+  const total = sum(
+    livePricedHoldings.map((holding) => holding.currentValue!)
+  );
+
+  if (total <= 0) {
+    return [];
+  }
+
+  return livePricedHoldings
+    .sort(
+      (a, b) => b.currentValue! - a.currentValue!
+    )
     .slice(0, topN)
-    .map((h) => ({
-      symbol: h.symbol,
-      value: h.currentValue,
-      percent: (h.currentValue / total) * 100,
+    .map((holding) => ({
+      symbol: holding.symbol,
+      value: holding.currentValue!,
+      percent: (holding.currentValue! / total) * 100,
     }));
 }

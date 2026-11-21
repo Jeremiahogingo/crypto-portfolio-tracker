@@ -10,10 +10,11 @@ import React, {
   useSyncExternalStore,
 } from "react";
 
-type Theme = "dark" | "light";
+export type Theme = "dark" | "light";
 
 interface ThemeContextType {
   theme: Theme;
+  setTheme: (theme: Theme) => void;
   toggleTheme: () => void;
 }
 
@@ -22,20 +23,57 @@ const DEFAULT_THEME: Theme = "dark";
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-// Subscribers allow React to observe changes to the browser's theme store.
 const themeSubscribers = new Set<() => void>();
+
+let memoryTheme: Theme = DEFAULT_THEME;
 
 function isTheme(value: string | null): value is Theme {
   return value === "dark" || value === "light";
 }
 
-function getThemeSnapshot(): Theme {
-  const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+function readStoredTheme(): Theme {
+  try {
+    const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
 
-  return isTheme(storedTheme) ? storedTheme : DEFAULT_THEME;
+    if (isTheme(stored)) {
+      memoryTheme = stored;
+      return stored;
+    }
+  } catch {
+    // Browser storage may be disabled or inaccessible.
+  }
+
+  return memoryTheme;
 }
 
-// The server and initial hydration render must use the same deterministic value.
+function applyTheme(theme: Theme) {
+  const root = document.documentElement;
+
+  root.classList.toggle("dark", theme === "dark");
+  root.dataset.theme = theme;
+
+  const themeColor = document.querySelector<HTMLMetaElement>(
+    'meta[name="theme-color"]'
+  );
+
+  if (themeColor) {
+    themeColor.content =
+      theme === "dark" ? "#0B1220" : "#F4F7FC";
+  }
+}
+
+function notifySubscribers() {
+  themeSubscribers.forEach((subscriber) => subscriber());
+}
+
+function getThemeSnapshot(): Theme {
+  if (typeof window === "undefined") {
+    return DEFAULT_THEME;
+  }
+
+  return readStoredTheme();
+}
+
 function getServerThemeSnapshot(): Theme {
   return DEFAULT_THEME;
 }
@@ -43,9 +81,19 @@ function getServerThemeSnapshot(): Theme {
 function subscribeToTheme(onStoreChange: () => void) {
   themeSubscribers.add(onStoreChange);
 
-  // Storage events synchronize changes made in other tabs.
   const handleStorageChange = (event: StorageEvent) => {
-    if (event.key === THEME_STORAGE_KEY || event.key === null) {
+    if (event.key === THEME_STORAGE_KEY) {
+      memoryTheme = isTheme(event.newValue)
+        ? event.newValue
+        : DEFAULT_THEME;
+
+      applyTheme(memoryTheme);
+      onStoreChange();
+    }
+
+    if (event.key === null) {
+      memoryTheme = DEFAULT_THEME;
+      applyTheme(DEFAULT_THEME);
       onStoreChange();
     }
   };
@@ -56,10 +104,6 @@ function subscribeToTheme(onStoreChange: () => void) {
     themeSubscribers.delete(onStoreChange);
     window.removeEventListener("storage", handleStorageChange);
   };
-}
-
-function notifyThemeSubscribers() {
-  themeSubscribers.forEach((subscriber) => subscriber());
 }
 
 export function ThemeProvider({
@@ -73,24 +117,37 @@ export function ThemeProvider({
     getServerThemeSnapshot
   );
 
-  // Keep the document's styling synchronized with the React theme state.
-  useEffect(() => {
-    document.documentElement.classList.toggle("dark", theme === "dark");
-  }, [theme]);
+  const setTheme = useCallback((nextTheme: Theme) => {
+    memoryTheme = nextTheme;
+
+    try {
+      window.localStorage.setItem(
+        THEME_STORAGE_KEY,
+        nextTheme
+      );
+    } catch {
+      // Keep the current session usable even without persistent storage.
+    }
+
+    applyTheme(nextTheme);
+    notifySubscribers();
+  }, []);
 
   const toggleTheme = useCallback(() => {
-    const nextTheme: Theme = theme === "dark" ? "light" : "dark";
+    setTheme(theme === "dark" ? "light" : "dark");
+  }, [setTheme, theme]);
 
-    window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
-    notifyThemeSubscribers();
+  useEffect(() => {
+    applyTheme(theme);
   }, [theme]);
 
   const contextValue = useMemo(
     () => ({
       theme,
+      setTheme,
       toggleTheme,
     }),
-    [theme, toggleTheme]
+    [theme, setTheme, toggleTheme]
   );
 
   return (

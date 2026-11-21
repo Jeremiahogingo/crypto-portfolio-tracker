@@ -1,8 +1,5 @@
-// src/components/charts/ConcentrationChart.tsx
-
 "use client";
 
-import { Doughnut } from "react-chartjs-2";
 import {
   Chart as ChartJS,
   ArcElement,
@@ -10,7 +7,14 @@ import {
   Legend,
 } from "chart.js";
 import type { ChartOptions } from "chart.js";
+import { Doughnut } from "react-chartjs-2";
+
 import type { ConcentrationEntry } from "@/lib/analytics/calc";
+import { useTheme } from "@/context/ThemeContext";
+import {
+  getChartTheme,
+  getDoughnutChartOptions,
+} from "@/utils/chartTheme";
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
@@ -36,13 +40,16 @@ export default function ConcentrationChart({
   entries,
   height = 320,
 }: ConcentrationChartProps) {
+  const { theme } = useTheme();
+  const chartTheme = getChartTheme(theme);
+
   if (entries.length === 0) {
     return (
       <div
         className="flex flex-col items-center justify-center text-center"
         style={{ height }}
       >
-        <span className="text-3xl mb-2">🥧</span>
+        <span className="mb-2 text-3xl">🥧</span>
         <p className="text-sm text-secondary">
           Add holdings to see your concentration.
         </p>
@@ -51,46 +58,40 @@ export default function ConcentrationChart({
   }
 
   const data = {
-    labels: entries.map((e) => e.symbol),
+    labels: entries.map((entry) => entry.symbol),
     datasets: [
       {
-        data: entries.map((e) => e.value),
-        backgroundColor: entries.map((_, i) => PALETTE[i % PALETTE.length]),
-        borderColor: "#111827",
+        data: entries.map((entry) => entry.value),
+        backgroundColor: entries.map(
+          (_, index) => PALETTE[index % PALETTE.length],
+        ),
+        borderColor: chartTheme.border,
         borderWidth: 2,
       },
     ],
   };
 
+  const baseOptions = getDoughnutChartOptions(chartTheme);
+
   const options: ChartOptions<"doughnut"> = {
-    responsive: true,
-    maintainAspectRatio: false,
+    ...baseOptions,
+
     plugins: {
-      legend: {
-        position: "bottom",
-        labels: {
-          color: "#94A3B8",
-          padding: 10,
-          usePointStyle: true,
-          pointStyle: "circle",
-        },
-      },
+      ...baseOptions.plugins,
+
       tooltip: {
-        backgroundColor: "#111827",
-        titleColor: "#F8FAFC",
-        bodyColor: "#94A3B8",
-        borderColor: "rgba(255,255,255,0.05)",
-        borderWidth: 1,
+        ...baseOptions.plugins?.tooltip,
+
         callbacks: {
           label: (context) => {
             const entry = entries[context.dataIndex];
 
-            // Guard against an index that no longer matches the source entries.
             if (!entry) return "";
 
-            return ` ${entry.symbol}: $${entry.value.toLocaleString(undefined, {
-              maximumFractionDigits: 0,
-            })} (${entry.percent.toFixed(1)}%)`;
+            return ` ${entry.symbol}: $${entry.value.toLocaleString(
+              undefined,
+              { maximumFractionDigits: 0 },
+            )} (${entry.percent.toFixed(1)}%)`;
           },
         },
       },

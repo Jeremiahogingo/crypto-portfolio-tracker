@@ -10,8 +10,15 @@ import {
   Tooltip,
   Legend,
 } from "chart.js";
+import type { ChartOptions } from "chart.js";
 import { Line } from "react-chartjs-2";
+
 import { portfolioGrowth } from "@/mock/dashboard";
+import { useTheme } from "@/context/ThemeContext";
+import {
+  getChartTheme,
+  getCartesianChartOptions,
+} from "@/utils/chartTheme";
 
 ChartJS.register(
   CategoryScale,
@@ -20,10 +27,13 @@ ChartJS.register(
   LineElement,
   Filler,
   Tooltip,
-  Legend
+  Legend,
 );
 
 export default function PortfolioChart() {
+  const { theme } = useTheme();
+  const chartTheme = getChartTheme(theme);
+
   const data = {
     labels: portfolioGrowth.map((item) => item.month),
     datasets: [
@@ -40,9 +50,27 @@ export default function PortfolioChart() {
     ],
   };
 
+  const baseOptions = getCartesianChartOptions<"line">(chartTheme);
+
+  const options: ChartOptions<"line"> = {
+    ...baseOptions,
+
+    scales: {
+      ...baseOptions.scales,
+
+      y: {
+        ...baseOptions.scales?.y,
+        ticks: {
+          ...baseOptions.scales?.y?.ticks,
+          callback: (value) => `$${Number(value).toLocaleString()}`,
+        },
+      },
+    },
+  };
+
   return (
     <div className="w-full" style={{ height: 260 }}>
-      <Line data={data} options={{ maintainAspectRatio: false, responsive: true }} />
+      <Line data={data} options={options} />
     </div>
   );
 }

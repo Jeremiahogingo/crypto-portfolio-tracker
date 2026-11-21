@@ -1,4 +1,3 @@
-
 /**
  * src/lib/actions/profile.ts
  *
@@ -16,9 +15,9 @@
  * - Missing profiles can be recovered without creating duplicate profile rows.
  * - Default portfolio provisioning remains idempotent.
  *
- * Redirect handling:
- * Next.js redirect() throws internally. It must remain outside mutation
- * try/catch blocks so successful redirects propagate to the framework.
+ * Currency:
+ * - The application currently reports all amounts in USD.
+ * - The currency is assigned server-side rather than accepted from the browser.
  */
 
 "use server";
@@ -32,18 +31,11 @@ import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth/get-current-user";
 import { profiles, portfolios } from "@/db/schema";
 
+const REPORTING_CURRENCY = "USD" as const;
+
 // --------------------------------------------------
 // Validation schemas
 // --------------------------------------------------
-
-const SUPPORTED_CURRENCIES = [
-  "USD",
-  "EUR",
-  "GBP",
-  "KES",
-  "JPY",
-  "NGN",
-] as const;
 
 const OnboardingSchema = z.object({
   displayName: z
@@ -51,13 +43,14 @@ const OnboardingSchema = z.object({
     .trim()
     .min(2, "Display name must be at least 2 characters")
     .max(50, "Display name must be 50 characters or fewer"),
-
-  currency: z.enum(SUPPORTED_CURRENCIES),
 });
 
 const UpdateProfileSchema = z.object({
-  displayName: z.string().trim().min(2).max(50),
-  currency: z.enum(SUPPORTED_CURRENCIES),
+  displayName: z
+    .string()
+    .trim()
+    .min(2, "Display name must be at least 2 characters")
+    .max(50, "Display name must be 50 characters or fewer"),
 });
 
 // --------------------------------------------------
@@ -78,8 +71,6 @@ export type ActionResult =
  * The profile upsert and default portfolio provisioning execute
  * within one PostgreSQL transaction.
  *
- * The upsert handles both an existing profile and a missing profile.
- *
  * PostgreSQL's INSERT ... ON CONFLICT DO UPDATE obtains the necessary
  * row-level lock. Concurrent onboarding requests for the same user
  * therefore serialize before checking for an existing portfolio.
@@ -88,7 +79,7 @@ export type ActionResult =
  * allowing multiple portfolios to be supported in the future.
  */
 export async function completeOnboarding(
-  formData: FormData
+  formData: FormData,
 ): Promise<ActionResult> {
   const session = await getCurrentUser();
 
@@ -98,7 +89,6 @@ export async function completeOnboarding(
 
   const parsed = OnboardingSchema.safeParse({
     displayName: formData.get("displayName"),
-    currency: formData.get("currency"),
   });
 
   if (!parsed.success) {
@@ -107,32 +97,25 @@ export async function completeOnboarding(
     };
   }
 
-  // The authenticated Supabase identity is the sole source of ownership.
   const userId = session.auth.id;
-  const { displayName, currency } = parsed.data;
-
-  // Use one timestamp consistently for this onboarding operation.
+  const { displayName } = parsed.data;
   const onboardedAt = new Date();
 
   try {
     await db.transaction(async (tx) => {
-      // Recover a missing profile or update the existing profile.
-      //
-      // A concurrent request for the same user will wait for the
-      // conflicting INSERT/UPDATE to finish before proceeding.
       const [upsertedProfile] = await tx
         .insert(profiles)
         .values({
           id: userId,
           displayName,
-          currency,
+          currency: REPORTING_CURRENCY,
           onboardedAt,
         })
         .onConflictDoUpdate({
           target: profiles.id,
           set: {
             displayName,
-            currency,
+            currency: REPORTING_CURRENCY,
             onboardedAt,
           },
         })
@@ -140,16 +123,12 @@ export async function completeOnboarding(
           id: profiles.id,
         });
 
-      // Defensive check: the upsert should always return the profile.
       if (!upsertedProfile) {
         throw new Error(
-          "Failed to provision the authenticated user's profile"
+          "Failed to provision the authenticated user's profile",
         );
       }
 
-      // PostgreSQL READ COMMITTED gives this statement a fresh snapshot.
-      // A concurrent onboarding transaction that completed while this
-      // transaction waited will therefore be visible here.
       const [existingPortfolio] = await tx
         .select({
           id: portfolios.id,
@@ -159,7 +138,6 @@ export async function completeOnboarding(
         .orderBy(portfolios.createdAt)
         .limit(1);
 
-      // Provision the default portfolio only when one does not exist.
       if (!existingPortfolio) {
         await tx.insert(portfolios).values({
           userId,
@@ -178,7 +156,7 @@ export async function completeOnboarding(
 
   revalidatePath("/", "layout");
 
-  // Keep outside the try/catch because Next.js redirect() throws internally.
+  // Keep outside the try/catch because redirect() throws internally.
   redirect("/");
 }
 
@@ -187,13 +165,15 @@ export async function completeOnboarding(
 // --------------------------------------------------
 
 /**
- * Update the authenticated user's display name and preferred currency.
+ * Update the authenticated user's display name.
+ *
+ * The reporting currency is normalized to USD because multi-currency
+ * conversion is not currently supported by the application.
  *
  * This operation deliberately does not change onboardedAt.
- * It is intended for users who have already completed onboarding.
  */
 export async function updateProfile(
-  formData: FormData
+  formData: FormData,
 ): Promise<ActionResult> {
   const session = await getCurrentUser();
 
@@ -205,7 +185,6 @@ export async function updateProfile(
 
   const parsed = UpdateProfileSchema.safeParse({
     displayName: formData.get("displayName"),
-    currency: formData.get("currency"),
   });
 
   if (!parsed.success) {
@@ -219,7 +198,7 @@ export async function updateProfile(
       .update(profiles)
       .set({
         displayName: parsed.data.displayName,
-        currency: parsed.data.currency,
+        currency: REPORTING_CURRENCY,
       })
       .where(eq(profiles.id, session.auth.id))
       .returning({

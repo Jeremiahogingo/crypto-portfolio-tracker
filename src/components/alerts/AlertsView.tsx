@@ -1,21 +1,9 @@
 // src/components/alerts/AlertsView.tsx
 //
-// Client orchestrator for the Alerts page.
+// Merges stored alerts with current market data.
 //
-// ─── Data flow ───────────────────────────────────────────────────────────
-// Server passes raw Alert[] rows. This view fetches market data for just
-// the alert coinIds and merges — producing AlertWithPrice[] for the cards.
-//
-// ─── Why merge client-side ───────────────────────────────────────────────
-// Prices refresh every 60s. Doing that server-side would mean either
-// router.refresh() on a timer (bad — reloads the whole page) or fetching
-// prices server-side on every render (blocks initial render on CoinGecko).
-// Client-side merge with React Query is the standard pattern.
-//
-// ─── Sort order ──────────────────────────────────────────────────────────
-// Preserves the DB order (newest first). Sorting by "closest to target"
-// would be more useful but changes as prices move; newest-first is stable
-// and predictable.
+// A missing quote remains unavailable. A fallback quote is marked
+// indicative and is never treated as a verified live price.
 
 "use client";
 
@@ -30,67 +18,107 @@ import DeleteAlertModal from "./DeleteAlertModal";
 import { useMarkets } from "@/hooks/useMarkets";
 import type { Alert } from "@/db/schema";
 import type { AlertWithPrice } from "@/types/alerts";
+import type { PriceStatus } from "@/types/valuation";
 
 interface AlertsViewProps {
   initialAlerts: Alert[];
 }
 
-export default function AlertsView({ initialAlerts }: AlertsViewProps) {
+export default function AlertsView({
+  initialAlerts,
+}: AlertsViewProps) {
   const [createOpen, setCreateOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<AlertWithPrice | null>(
-    null
-  );
+  const [deleteTarget, setDeleteTarget] =
+    useState<AlertWithPrice | null>(null);
 
   const coinIds = useMemo(
-    () => Array.from(new Set(initialAlerts.map((a) => a.coinId))),
+    () => Array.from(new Set(initialAlerts.map((alert) => alert.coinId))),
     [initialAlerts]
   );
 
-  const { coins, isLoading } = useMarkets(
-    { ids: coinIds, per_page: Math.max(coinIds.length, 1) },
-    { enabled: coinIds.length > 0 }
+  const {
+    coins,
+    meta,
+    isLoading,
+  } = useMarkets(
+    {
+      ids: coinIds,
+      per_page: Math.max(coinIds.length, 1),
+    },
+    {
+      enabled: coinIds.length > 0,
+    }
   );
 
   const byId = useMemo(
-    () => new Map(coins.map((c) => [c.id, c])),
+    () => new Map(coins.map((coin) => [coin.id, coin])),
     [coins]
   );
 
   const enriched: AlertWithPrice[] = useMemo(
     () =>
-      initialAlerts.map((a) => {
-        const market = byId.get(a.coinId);
+      initialAlerts.map((alert) => {
+        const market = byId.get(alert.coinId);
+
+        const currentPrice =
+          market?.price !== null && market?.price !== undefined
+            ? market.price
+            : null;
+
+        const priceStatus: PriceStatus =
+          currentPrice === null
+            ? "unavailable"
+            : meta?.source === "live"
+              ? "live"
+              : "fallback";
+
+        // Only a live response supplies a verified 24-hour movement.
+        const change24h =
+          priceStatus === "live"
+            ? market?.change24h ?? null
+            : null;
+
         return {
-          id: a.id,
-          coinId: a.coinId,
-          symbol: a.symbol,
-          condition: a.condition as "above" | "below",
-          targetPrice: Number(a.targetPrice),
-          enabled: a.enabled,
-          createdAt: a.createdAt,
-          coinName: market?.name ?? a.symbol,
+          id: alert.id,
+          coinId: alert.coinId,
+          symbol: alert.symbol,
+          condition: alert.condition as "above" | "below",
+          targetPrice: Number(alert.targetPrice),
+          enabled: alert.enabled,
+          createdAt: alert.createdAt,
+          coinName: market?.name ?? alert.symbol,
           logoUrl: market?.logoUrl ?? "?",
-          currentPrice: market?.price ?? 0,
-          change24h: market?.change24h ?? 0,
+          currentPrice,
+          change24h,
+          priceStatus,
         };
       }),
-    [initialAlerts, byId]
+    [initialAlerts, byId, meta?.source]
   );
 
-  const activeCount = enriched.filter((a) => a.enabled).length;
+  const activeCount = enriched.filter(
+    (alert) => alert.enabled
+  ).length;
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-text">Alerts</h1>
+          <h1 className="text-2xl font-bold text-text">
+            Alerts
+          </h1>
+
           {enriched.length > 0 && (
-            <p className="text-sm text-secondary mt-1">
+            <p className="mt-1 text-sm text-secondary">
               {activeCount} active · {enriched.length} total
             </p>
           )}
         </div>
-        <Button variant="primary" onClick={() => setCreateOpen(true)}>
+
+        <Button
+          variant="primary"
+          onClick={() => setCreateOpen(true)}
+        >
           + Create alert
         </Button>
       </div>
@@ -99,29 +127,30 @@ export default function AlertsView({ initialAlerts }: AlertsViewProps) {
         <EmptyState
           icon="🔔"
           title="No alerts yet"
-          description="Create your first price alert to be notified when a coin hits your target."
+          description="Create your first price alert to track when a verified live price crosses your target."
           actionLabel="Create alert"
           onAction={() => setCreateOpen(true)}
         />
       ) : isLoading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {initialAlerts.map((a) => (
-            <Card key={a.id}>
-              <div className="flex items-center gap-3 mb-4">
-                <Skeleton className="w-10 h-10 rounded-full" />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {initialAlerts.map((alert) => (
+            <Card key={alert.id}>
+              <div className="mb-4 flex items-center gap-3">
+                <Skeleton className="h-10 w-10 rounded-full" />
                 <div className="flex-1">
-                  <Skeleton className="h-4 w-24 mb-1" />
+                  <Skeleton className="mb-1 h-4 w-24" />
                   <Skeleton className="h-3 w-12" />
                 </div>
               </div>
-              <Skeleton className="h-3 w-32 mb-2" />
-              <Skeleton className="h-6 w-28 mb-2" />
+
+              <Skeleton className="mb-2 h-3 w-32" />
+              <Skeleton className="mb-2 h-6 w-28" />
               <Skeleton className="h-3 w-24" />
             </Card>
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {enriched.map((alert) => (
             <AlertCard
               key={alert.id}
@@ -136,6 +165,7 @@ export default function AlertsView({ initialAlerts }: AlertsViewProps) {
         isOpen={createOpen}
         onClose={() => setCreateOpen(false)}
       />
+
       <DeleteAlertModal
         isOpen={Boolean(deleteTarget)}
         alert={deleteTarget}

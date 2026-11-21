@@ -1,13 +1,10 @@
 // src/types/alerts.ts
 //
-// Display type for alerts. The DB row (Alert from @/db/schema) stores the
-// minimum needed to express user intent: target price, condition, enabled.
-// Everything else — coin name, logo, current price — is joined in at render
-// time from live market data.
-//
-// This separation matters: if the DB stored currentPrice, it would go stale
-// the moment we stored it. A target price is intent (stable); a current
-// price is a snapshot (must be live).
+// Display type for alerts.
+// Stored alert data expresses user intent; current market values are
+// fetched separately and must preserve their source and availability.
+
+import type { PriceStatus } from "@/types/valuation";
 
 export interface AlertWithPrice {
   id: string;
@@ -18,10 +15,15 @@ export interface AlertWithPrice {
   enabled: boolean;
   createdAt: Date;
 
-  // Joined from live market data — 0/"" if the coin isn't in the current
-  // market snapshot (delisted, or CoinGecko unreachable).
   coinName: string;
   logoUrl: string;
-  currentPrice: number;
-  change24h: number;
+
+  /** Null means no usable market quote was returned. */
+  currentPrice: number | null;
+
+  /** Null means no verified 24-hour percentage change is available. */
+  change24h: number | null;
+
+  /** Identifies whether the quote is live, fallback or unavailable. */
+  priceStatus: PriceStatus;
 }

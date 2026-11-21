@@ -1,135 +1,201 @@
 // src/lib/portfolio/calc.ts
-//
-// Pure portfolio math. No DB, no API — takes raw rows + market prices,
-// returns display-ready structures.
-//
-// Keeping calculations pure has three benefits:
-//   1. Unit-testable without mocking anything.
-//   2. Reusable on the server (initial render) and client (after hydration).
-//   3. Single source of truth for P&L semantics — if the definition of
-//      "cost basis" ever changes, it changes here, not in five components.
+// Pure financial display calculations. Ledger accounting remains in ledger.ts.
 
-import type { Holding } from "@/db/schema";
 import type {
   AllocationSlice,
   HoldingWithPrice,
   PortfolioSummary,
 } from "@/types/portfolio";
+import type {
+  HoldingValuation,
+  MarketSnapshot,
+  PriceStatus,
+  ValuationInput,
+} from "@/types/valuation";
 
-interface MarketSnapshot {
-  price: number;
-  change24h: number;
+export type { HoldingWithPrice } from "@/types/portfolio";
+
+function toFiniteNumber(value: number | string | null | undefined): number {
+  if (value === null || value === undefined || value === "") return 0;
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function isValidPrice(value: number | null | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function isValidPercentage(value: number | null | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function sum(values: readonly number[]): number {
+  return values.reduce((total, value) => total + value, 0);
+}
+
+function getPriceStatus(market?: MarketSnapshot): PriceStatus {
+  if (!market || !isValidPrice(market.price)) return "unavailable";
+
+  // Never assume a quote is live. Missing provenance is treated conservatively.
+  return market.source === "live" ? "live" : "fallback";
 }
 
 /**
- * Merge a Drizzle holding row with its live market data.
- *
- * Returns 0s for current price/value if the coin isn't in the market
- * snapshot — happens if CoinGecko is unreachable or the coin was delisted.
- * The holding still renders so the user can see/edit it; only P&L is 0.
+ * Enrich a DB holding with a quote without mutating or rewriting ledger data.
+ * Missing price => null current value/P&L, not a fabricated zero-dollar loss.
+ * A numeric quote of exactly zero remains a valid quote.
  */
-export function enrichHolding(
-  holding: Holding,
-  market: MarketSnapshot | undefined
-): HoldingWithPrice {
-  const quantity = Number(holding.quantity);
-  const costBasis = Number(holding.costBasis);
-
-  const currentPrice = market?.price ?? 0;
-  const change24h = market?.change24h ?? 0;
-
-  const currentValue = quantity * currentPrice;
+export function enrichHolding<T extends ValuationInput>(
+  holding: T,
+  market?: MarketSnapshot,
+): HoldingWithPrice<T> {
+  const quantity = toFiniteNumber(holding.quantity);
+  const costBasis = toFiniteNumber(holding.costBasis);
   const costTotal = quantity * costBasis;
-  const pnl = currentValue - costTotal;
-  // Guard against division by zero — a holding with cost basis 0 is
-  // possible (airdrops) and the percentage is meaningless for those.
-  const pnlPercent = costTotal > 0 ? (pnl / costTotal) * 100 : 0;
+  const priceStatus = getPriceStatus(market);
 
-  return {
-    id: holding.id,
-    portfolioId: holding.portfolioId,
-    coinId: holding.coinId,
-    symbol: holding.symbol,
+  const currentPrice = priceStatus === "unavailable" ? null : market!.price;
+  const currentValue = currentPrice === null ? null : quantity * currentPrice;
+
+  const change24h =
+    priceStatus === "unavailable" || !isValidPercentage(market?.change24h)
+      ? null
+      : market!.change24h!;
+
+  const hasVerifiedPrice = priceStatus === "live" && currentValue !== null;
+  const pnl = hasVerifiedPrice ? currentValue - costTotal : null;
+  const pnlPercent =
+    hasVerifiedPrice && costTotal > 0 && pnl !== null
+      ? (pnl / costTotal) * 100
+      : null;
+
+  const normalizedHolding = {
+    ...holding,
     quantity,
     costBasis,
+  } as Omit<T, "quantity" | "costBasis"> & {
+    quantity: number;
+    costBasis: number;
+  };
+
+  const valuation: HoldingValuation = {
     currentPrice,
     change24h,
     currentValue,
     costTotal,
     pnl,
     pnlPercent,
-    createdAt: holding.createdAt,
-    updatedAt: holding.updatedAt,
+    priceStatus,
   };
+
+  return { ...normalizedHolding, ...valuation } as HoldingWithPrice<T>;
 }
 
 /**
- * Aggregate enriched holdings into portfolio-level stats.
+ * Aggregate verified portfolio metrics.
  *
- * 24h change calculation:
- *   currentValue = qty × price_now
- *   valueYesterday = qty × (price_now / (1 + change24h/100))
- *   change24hValue = currentValue - valueYesterday
- *
- * This weights by current holdings, so a large position moving 0.5% matters
- * more than a small one moving 5% — the "portfolio impact" number investors
- * actually want, not a naive average of percentage changes.
+ * `totalValue` and `totalPnl` are all-or-nothing: they are null whenever any
+ * active holding is fallback-priced or unavailable. `knownValue` and
+ * `indicativeValue` expose the partial components without mislabelling them.
  */
-export function summarizePortfolio(
-  holdings: HoldingWithPrice[]
+export function summarizePortfolio<T extends ValuationInput>(
+  holdings: readonly HoldingWithPrice<T>[],
 ): PortfolioSummary {
-  let totalValue = 0;
-  let totalCost = 0;
-  let valueYesterday = 0;
+  const activeHoldings = holdings.filter((holding) => holding.quantity !== 0);
 
-  for (const h of holdings) {
-    totalValue += h.currentValue;
-    totalCost += h.costTotal;
-    // Reconstruct yesterday's value. Guard against -100% (impossible in
-    // practice, but prevents NaN propagation through the summary).
-    const denominator = 1 + h.change24h / 100;
-    if (denominator > 0) {
-      valueYesterday += h.currentValue / denominator;
-    } else {
-      valueYesterday += h.currentValue;
-    }
+  const liveHoldings = activeHoldings.filter(
+    (holding) => holding.priceStatus === "live" && holding.currentValue !== null,
+  );
+  const fallbackHoldings = activeHoldings.filter(
+    (holding) => holding.priceStatus === "fallback" && holding.currentValue !== null,
+  );
+  const unavailableHoldings = activeHoldings.filter(
+    (holding) => holding.priceStatus === "unavailable" || holding.currentValue === null,
+  );
+
+  const knownValue = sum(liveHoldings.map((holding) => holding.currentValue!));
+  const indicativeValue = sum(
+    fallbackHoldings.map((holding) => holding.currentValue!),
+  );
+  const totalCost = sum(holdings.map((holding) => holding.costTotal));
+
+  const hasCompleteValuation =
+    unavailableHoldings.length === 0 && fallbackHoldings.length === 0;
+  const totalValue = hasCompleteValuation ? knownValue : null;
+  const totalPnl = totalValue === null ? null : totalValue - totalCost;
+  const totalPnlPercent =
+    totalPnl !== null && totalCost > 0 ? (totalPnl / totalCost) * 100 : null;
+
+  const hasComplete24hChange =
+    hasCompleteValuation &&
+    liveHoldings.every((holding) => {
+      if (holding.change24h === null || holding.currentPrice === null) return false;
+      return 1 + holding.change24h / 100 > 0;
+    });
+
+  let change24hValue: number | null = null;
+  let change24hPercent: number | null = null;
+
+  if (hasComplete24hChange) {
+    const previousValue = sum(
+      liveHoldings.map((holding) => {
+        const changeFactor = 1 + holding.change24h! / 100;
+        return holding.currentValue! / changeFactor;
+      }),
+    );
+    change24hValue = knownValue - previousValue;
+    change24hPercent =
+      previousValue > 0 ? (change24hValue / previousValue) * 100 : null;
   }
 
-  const totalPnl = totalValue - totalCost;
-  const totalPnlPercent = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
-  const change24hValue = totalValue - valueYesterday;
-  const change24hPercent =
-    valueYesterday > 0 ? (change24hValue / valueYesterday) * 100 : 0;
+  const totalHoldings = activeHoldings.length;
+  const pricedCount = liveHoldings.length;
+  const fallbackCount = fallbackHoldings.length;
+  const unavailableCount = unavailableHoldings.length;
 
   return {
     totalValue,
+    knownValue,
+    indicativeValue,
     totalCost,
     totalPnl,
     totalPnlPercent,
     change24hValue,
     change24hPercent,
-    assetCount: holdings.length,
+    pricedCount,
+    fallbackCount,
+    unavailableCount,
+    totalHoldings,
+    assetCount: totalHoldings,
+    valuationCoverage:
+      totalHoldings === 0 ? 100 : (pricedCount / totalHoldings) * 100,
+    hasCompleteValuation,
+    hasComplete24hChange,
   };
 }
 
 /**
- * Compute allocation slices sorted by value descending. Coins with zero
- * current value are dropped — a delisted coin shouldn't show up as 0% of
- * the pie, it just inflates the legend with noise.
+ * Allocation percentages describe only positions with verified live prices.
+ * The UI must label a partial allocation as the allocation of priced holdings.
  */
-export function computeAllocation(
-  holdings: HoldingWithPrice[]
+export function computeAllocation<T extends ValuationInput & { coinId: string; symbol: string }>(
+  holdings: readonly HoldingWithPrice<T>[],
 ): AllocationSlice[] {
-  const totalValue = holdings.reduce((sum, h) => sum + h.currentValue, 0);
-  if (totalValue <= 0) return [];
+  const priced = holdings.filter(
+    (holding) =>
+      holding.quantity !== 0 &&
+      holding.priceStatus === "live" &&
+      holding.currentValue !== null &&
+      holding.currentValue > 0,
+  );
 
-  return holdings
-    .filter((h) => h.currentValue > 0)
-    .map((h) => ({
-      coinId: h.coinId,
-      symbol: h.symbol,
-      value: h.currentValue,
-      percent: (h.currentValue / totalValue) * 100,
-    }))
-    .sort((a, b) => b.value - a.value);
+  const total = sum(priced.map((holding) => holding.currentValue!));
+  if (total <= 0) return [];
+
+  return priced.map((holding) => ({
+    coinId: holding.coinId,
+    symbol: holding.symbol,
+    value: holding.currentValue!,
+    percent: (holding.currentValue! / total) * 100,
+  }));
 }

@@ -1,28 +1,57 @@
 // src/lib/api/normalize.ts
 //
-// Maps CoinGecko raw responses into our domain types (see @/types/market).
+// Maps CoinGecko raw responses into application domain types.
 //
-// Kept separate from the client so it can be unit-tested without mocking
-// fetch, and so that if CoinGecko changes a field name, the fix lands here
-// rather than in every route handler.
+// Price availability is preserved explicitly:
+// - number (including 0): provider supplied a valid numeric value
+// - null: provider omitted or supplied an invalid value
+//
+// Never use the general zero-defaulting helper for market prices.
 
 import type {
   CGGlobal,
   CGMarketCoin,
   CGTrending,
 } from "@/types/coingecko";
+
 import type {
   GlobalMarketStats,
   MarketCoin,
   TrendingCoin,
 } from "@/types/market";
 
-/**
- * CoinGecko returns `null` for a handful of fields on low-cap coins (e.g.
- * `total_supply`, occasionally `price_change_percentage_24h` for coins
- * with no recent trades). Coerce to 0 so components don't need null guards.
- */
-const n = (v: number | null | undefined): number => v ?? 0;
+/** General numeric fallback for non-price statistics. */
+const n = (value: number | null | undefined): number =>
+  value ?? 0;
+
+/** Accept finite, non-negative market prices. Preserve a genuine zero. */
+function normalizePrice(
+  value: number | null | undefined
+): number | null {
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    value < 0
+  ) {
+    return null;
+  }
+
+  return value;
+}
+
+/** Accept finite positive or negative percentage changes. */
+function normalizePercentage(
+  value: number | null | undefined
+): number | null {
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value)
+  ) {
+    return null;
+  }
+
+  return value;
+}
 
 export function normalizeCoin(cg: CGMarketCoin): MarketCoin {
   return {
@@ -30,8 +59,13 @@ export function normalizeCoin(cg: CGMarketCoin): MarketCoin {
     symbol: cg.symbol.toUpperCase(),
     name: cg.name,
     logoUrl: cg.image,
-    price: n(cg.current_price),
-    change24h: n(cg.price_change_percentage_24h),
+
+    // Do not convert missing price information into a false $0 quote.
+    price: normalizePrice(cg.current_price),
+    change24h: normalizePercentage(
+      cg.price_change_percentage_24h
+    ),
+
     marketCap: n(cg.market_cap),
     volume24h: n(cg.total_volume),
     rank: n(cg.market_cap_rank),
@@ -39,19 +73,25 @@ export function normalizeCoin(cg: CGMarketCoin): MarketCoin {
   };
 }
 
-export function normalizeGlobal(cg: CGGlobal): GlobalMarketStats {
-  const d = cg.data;
+export function normalizeGlobal(
+  cg: CGGlobal
+): GlobalMarketStats {
+  const data = cg.data;
+
   return {
-    totalMarketCap: d.total_market_cap.usd ?? 0,
-    totalVolume: d.total_volume.usd ?? 0,
-    btcDominance: d.market_cap_percentage.btc ?? 0,
-    ethDominance: d.market_cap_percentage.eth ?? 0,
-    activeCoins: d.active_cryptocurrencies ?? 0,
-    marketCapChange24h: d.market_cap_change_percentage_24h_usd ?? 0,
+    totalMarketCap: data.total_market_cap.usd ?? 0,
+    totalVolume: data.total_volume.usd ?? 0,
+    btcDominance: data.market_cap_percentage.btc ?? 0,
+    ethDominance: data.market_cap_percentage.eth ?? 0,
+    activeCoins: data.active_cryptocurrencies ?? 0,
+    marketCapChange24h:
+      data.market_cap_change_percentage_24h_usd ?? 0,
   };
 }
 
-export function normalizeTrending(cg: CGTrending): TrendingCoin[] {
+export function normalizeTrending(
+  cg: CGTrending
+): TrendingCoin[] {
   return cg.coins.map(({ item }) => ({
     id: item.id,
     name: item.name,
@@ -59,7 +99,7 @@ export function normalizeTrending(cg: CGTrending): TrendingCoin[] {
     logoUrl: item.small || item.thumb || item.large,
     rank: item.market_cap_rank ?? 0,
     price: item.data?.price ?? 0,
-    // The 24h percentage is nested by currency — we only want USD.
-    change24h: item.data?.price_change_percentage_24h?.usd ?? 0,
+    change24h:
+      item.data?.price_change_percentage_24h?.usd ?? 0,
   }));
 }
