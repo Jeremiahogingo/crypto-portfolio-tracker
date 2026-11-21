@@ -1,8 +1,15 @@
-
 /**
  * tests/api-validation.test.ts
  *
  * Regression tests for public API query validation and RSS URL safety.
+ *
+ * Covers:
+ * - Market pagination and ordering.
+ * - Coin ID validation.
+ * - Currency syntax.
+ * - Duplicate query parameters.
+ * - News pagination.
+ * - External URL validation.
  */
 
 import { test } from "node:test";
@@ -13,6 +20,8 @@ import {
   parseNewsQuery,
   sanitizeHttpsUrl,
 } from "../src/lib/api/route-validation";
+
+import { MARKET_ORDER_OPTIONS } from "../src/types/market";
 
 // --------------------------------------------------
 // Markets query tests
@@ -30,6 +39,7 @@ test("markets query provides safe default values", () => {
     per_page: 100,
     page: 1,
     sparkline: false,
+    order: "market_cap_desc",
   });
 
   assert.equal("ids" in result.data, false);
@@ -38,8 +48,8 @@ test("markets query provides safe default values", () => {
 test("markets query accepts valid pagination parameters", () => {
   const result = parseMarketsQuery(
     new URLSearchParams(
-      "vs_currency=KES&per_page=50&page=2&sparkline=true"
-    )
+      "vs_currency=KES&per_page=50&page=2&sparkline=true",
+    ),
   );
 
   assert.equal(result.success, true);
@@ -55,8 +65,8 @@ test("markets query accepts valid pagination parameters", () => {
 test("markets query accepts valid coin IDs", () => {
   const result = parseMarketsQuery(
     new URLSearchParams(
-      "ids=bitcoin,ethereum,wrapped-bitcoin&per_page=3"
-    )
+      "ids=bitcoin,ethereum,wrapped-bitcoin&per_page=3",
+    ),
   );
 
   assert.equal(result.success, true);
@@ -72,7 +82,7 @@ test("markets query accepts valid coin IDs", () => {
 
 test("markets query normalizes currency to lowercase", () => {
   const result = parseMarketsQuery(
-    new URLSearchParams("vs_currency=USD")
+    new URLSearchParams("vs_currency=USD"),
   );
 
   assert.equal(result.success, true);
@@ -84,7 +94,7 @@ test("markets query normalizes currency to lowercase", () => {
 
 test("markets query rejects invalid currency syntax", () => {
   const result = parseMarketsQuery(
-    new URLSearchParams("vs_currency=usd%24")
+    new URLSearchParams("vs_currency=usd%24"),
   );
 
   assert.equal(result.success, false);
@@ -92,7 +102,7 @@ test("markets query rejects invalid currency syntax", () => {
 
 test("markets query rejects alphabetic per_page values", () => {
   const result = parseMarketsQuery(
-    new URLSearchParams("per_page=abc")
+    new URLSearchParams("per_page=abc"),
   );
 
   assert.equal(result.success, false);
@@ -100,7 +110,7 @@ test("markets query rejects alphabetic per_page values", () => {
 
 test("markets query rejects fractional page sizes", () => {
   const result = parseMarketsQuery(
-    new URLSearchParams("per_page=10.5")
+    new URLSearchParams("per_page=10.5"),
   );
 
   assert.equal(result.success, false);
@@ -108,7 +118,7 @@ test("markets query rejects fractional page sizes", () => {
 
 test("markets query rejects zero page sizes", () => {
   const result = parseMarketsQuery(
-    new URLSearchParams("per_page=0")
+    new URLSearchParams("per_page=0"),
   );
 
   assert.equal(result.success, false);
@@ -116,7 +126,7 @@ test("markets query rejects zero page sizes", () => {
 
 test("markets query rejects page sizes above 250", () => {
   const result = parseMarketsQuery(
-    new URLSearchParams("per_page=251")
+    new URLSearchParams("per_page=251"),
   );
 
   assert.equal(result.success, false);
@@ -124,7 +134,7 @@ test("markets query rejects page sizes above 250", () => {
 
 test("markets query accepts the maximum page size", () => {
   const result = parseMarketsQuery(
-    new URLSearchParams("per_page=250")
+    new URLSearchParams("per_page=250"),
   );
 
   assert.equal(result.success, true);
@@ -132,7 +142,7 @@ test("markets query accepts the maximum page size", () => {
 
 test("markets query rejects non-integer page numbers", () => {
   const result = parseMarketsQuery(
-    new URLSearchParams("page=1.5")
+    new URLSearchParams("page=1.5"),
   );
 
   assert.equal(result.success, false);
@@ -140,7 +150,7 @@ test("markets query rejects non-integer page numbers", () => {
 
 test("markets query rejects excessive page numbers", () => {
   const result = parseMarketsQuery(
-    new URLSearchParams("page=10001")
+    new URLSearchParams("page=10001"),
   );
 
   assert.equal(result.success, false);
@@ -148,7 +158,7 @@ test("markets query rejects excessive page numbers", () => {
 
 test("markets query rejects invalid sparkline values", () => {
   const result = parseMarketsQuery(
-    new URLSearchParams("sparkline=yes")
+    new URLSearchParams("sparkline=yes"),
   );
 
   assert.equal(result.success, false);
@@ -156,7 +166,7 @@ test("markets query rejects invalid sparkline values", () => {
 
 test("markets query accepts an explicit false sparkline value", () => {
   const result = parseMarketsQuery(
-    new URLSearchParams("sparkline=false")
+    new URLSearchParams("sparkline=false"),
   );
 
   assert.equal(result.success, true);
@@ -168,7 +178,7 @@ test("markets query accepts an explicit false sparkline value", () => {
 
 test("markets query rejects empty coin ID entries", () => {
   const result = parseMarketsQuery(
-    new URLSearchParams("ids=bitcoin,,ethereum")
+    new URLSearchParams("ids=bitcoin,,ethereum"),
   );
 
   assert.equal(result.success, false);
@@ -176,7 +186,7 @@ test("markets query rejects empty coin ID entries", () => {
 
 test("markets query rejects malformed coin IDs", () => {
   const result = parseMarketsQuery(
-    new URLSearchParams("ids=bitcoin,ethereum%24")
+    new URLSearchParams("ids=bitcoin,ethereum%24"),
   );
 
   assert.equal(result.success, false);
@@ -184,7 +194,7 @@ test("markets query rejects malformed coin IDs", () => {
 
 test("markets query rejects duplicate coin IDs", () => {
   const result = parseMarketsQuery(
-    new URLSearchParams("ids=bitcoin,ethereum,bitcoin")
+    new URLSearchParams("ids=bitcoin,ethereum,bitcoin"),
   );
 
   assert.equal(result.success, false);
@@ -193,11 +203,11 @@ test("markets query rejects duplicate coin IDs", () => {
 test("markets query rejects more than 250 coin IDs", () => {
   const ids = Array.from(
     { length: 251 },
-    (_, index) => `coin-${index}`
+    (_, index) => `coin-${index}`,
   ).join(",");
 
   const result = parseMarketsQuery(
-    new URLSearchParams(`ids=${ids}&per_page=250`)
+    new URLSearchParams(`ids=${ids}&per_page=250`),
   );
 
   assert.equal(result.success, false);
@@ -205,7 +215,7 @@ test("markets query rejects more than 250 coin IDs", () => {
 
 test("markets query requires per_page to cover requested IDs", () => {
   const result = parseMarketsQuery(
-    new URLSearchParams("ids=bitcoin,ethereum&per_page=1")
+    new URLSearchParams("ids=bitcoin,ethereum&per_page=1"),
   );
 
   assert.equal(result.success, false);
@@ -213,7 +223,47 @@ test("markets query requires per_page to cover requested IDs", () => {
 
 test("markets query rejects duplicated parameters", () => {
   const result = parseMarketsQuery(
-    new URLSearchParams("per_page=10&per_page=20")
+    new URLSearchParams("per_page=10&per_page=20"),
+  );
+
+  assert.equal(result.success, false);
+});
+
+// --------------------------------------------------
+// Market ordering tests
+// --------------------------------------------------
+
+test("markets query accepts every supported market order", () => {
+  for (const order of MARKET_ORDER_OPTIONS) {
+    const result = parseMarketsQuery(
+      new URLSearchParams(`order=${order}`),
+    );
+
+    assert.equal(
+      result.success,
+      true,
+      `Expected ${order} to be accepted`,
+    );
+
+    if (!result.success) continue;
+
+    assert.equal(result.data.order, order);
+  }
+});
+
+test("markets query rejects unsupported market orders", () => {
+  const result = parseMarketsQuery(
+    new URLSearchParams("order=price_desc"),
+  );
+
+  assert.equal(result.success, false);
+});
+
+test("markets query rejects duplicated order parameters", () => {
+  const result = parseMarketsQuery(
+    new URLSearchParams(
+      "order=market_cap_desc&order=volume_desc",
+    ),
   );
 
   assert.equal(result.success, false);
@@ -235,7 +285,7 @@ test("news query provides a default limit of 30", () => {
 
 test("news query accepts a valid limit", () => {
   const result = parseNewsQuery(
-    new URLSearchParams("limit=20")
+    new URLSearchParams("limit=20"),
   );
 
   assert.equal(result.success, true);
@@ -247,7 +297,7 @@ test("news query accepts a valid limit", () => {
 
 test("news query accepts the maximum limit", () => {
   const result = parseNewsQuery(
-    new URLSearchParams("limit=50")
+    new URLSearchParams("limit=50"),
   );
 
   assert.equal(result.success, true);
@@ -259,7 +309,7 @@ test("news query accepts the maximum limit", () => {
 
 test("news query rejects values that are not integers", () => {
   const result = parseNewsQuery(
-    new URLSearchParams("limit=2.5")
+    new URLSearchParams("limit=2.5"),
   );
 
   assert.equal(result.success, false);
@@ -267,7 +317,7 @@ test("news query rejects values that are not integers", () => {
 
 test("news query rejects non-numeric values", () => {
   const result = parseNewsQuery(
-    new URLSearchParams("limit=abc")
+    new URLSearchParams("limit=abc"),
   );
 
   assert.equal(result.success, false);
@@ -275,7 +325,7 @@ test("news query rejects non-numeric values", () => {
 
 test("news query rejects zero", () => {
   const result = parseNewsQuery(
-    new URLSearchParams("limit=0")
+    new URLSearchParams("limit=0"),
   );
 
   assert.equal(result.success, false);
@@ -283,7 +333,7 @@ test("news query rejects zero", () => {
 
 test("news query rejects limits above 50", () => {
   const result = parseNewsQuery(
-    new URLSearchParams("limit=51")
+    new URLSearchParams("limit=51"),
   );
 
   assert.equal(result.success, false);
@@ -291,7 +341,7 @@ test("news query rejects limits above 50", () => {
 
 test("news query rejects duplicate limit parameters", () => {
   const result = parseNewsQuery(
-    new URLSearchParams("limit=10&limit=20")
+    new URLSearchParams("limit=10&limit=20"),
   );
 
   assert.equal(result.success, false);
@@ -304,84 +354,84 @@ test("news query rejects duplicate limit parameters", () => {
 test("accepts a valid HTTPS article URL", () => {
   assert.equal(
     sanitizeHttpsUrl("https://example.com/article"),
-    "https://example.com/article"
+    "https://example.com/article",
   );
 });
 
 test("accepts a valid HTTPS image URL", () => {
   assert.equal(
     sanitizeHttpsUrl("https://cdn.example.com/image.webp"),
-    "https://cdn.example.com/image.webp"
+    "https://cdn.example.com/image.webp",
   );
 });
 
 test("normalizes valid HTTPS URLs", () => {
   assert.equal(
     sanitizeHttpsUrl("https://example.com"),
-    "https://example.com/"
+    "https://example.com/",
   );
 });
 
 test("rejects HTTP URLs", () => {
   assert.equal(
     sanitizeHttpsUrl("http://example.com/article"),
-    undefined
+    undefined,
   );
 });
 
 test("rejects JavaScript URLs", () => {
   assert.equal(
     sanitizeHttpsUrl("javascript:alert(1)"),
-    undefined
+    undefined,
   );
 });
 
 test("rejects data URLs", () => {
   assert.equal(
     sanitizeHttpsUrl("data:text/html,hello"),
-    undefined
+    undefined,
   );
 });
 
 test("rejects protocol-relative URLs", () => {
   assert.equal(
     sanitizeHttpsUrl("//example.com/article"),
-    undefined
+    undefined,
   );
 });
 
 test("rejects embedded URL credentials", () => {
   assert.equal(
     sanitizeHttpsUrl("https://user:password@example.com"),
-    undefined
+    undefined,
   );
 });
 
 test("rejects URLs containing whitespace around them", () => {
   assert.equal(
     sanitizeHttpsUrl(" https://example.com "),
-    undefined
+    undefined,
   );
 });
 
 test("rejects malformed URLs", () => {
   assert.equal(
     sanitizeHttpsUrl("https://%"),
-    undefined
+    undefined,
   );
 });
 
 test("rejects empty URL values", () => {
   assert.equal(
     sanitizeHttpsUrl(""),
-    undefined
+    undefined,
   );
 });
 
 test("rejects non-string URL values", () => {
   assert.equal(
     sanitizeHttpsUrl(123),
-    undefined
+    undefined,
   );
 });
 
@@ -390,6 +440,6 @@ test("rejects oversized URL values", () => {
 
   assert.equal(
     sanitizeHttpsUrl(oversized),
-    undefined
+    undefined,
   );
 });

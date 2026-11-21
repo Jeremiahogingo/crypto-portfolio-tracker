@@ -1,4 +1,3 @@
-
 /**
  * src/app/api/crypto/markets/route.ts
  *
@@ -7,6 +6,16 @@
  * Public market-data endpoint.
  *
  * Validates all user-controlled query parameters before calling CoinGecko.
+ *
+ * Supports:
+ * - Currency selection.
+ * - Server-side market ordering.
+ * - Pagination.
+ * - Explicit coin ID filtering.
+ * - Optional seven-day sparklines.
+ *
+ * When CoinGecko is unavailable, fallback results respect the requested
+ * coin IDs, ordering and pagination.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -18,8 +27,7 @@ import {
 
 import { normalizeCoin } from "@/lib/api/normalize";
 import { parseMarketsQuery } from "@/lib/api/route-validation";
-
-import { fallbackMarkets } from "@/mock/api/fallback";
+import { selectFallbackMarkets } from "@/lib/api/fallback-markets";
 
 import type {
   ApiResponse,
@@ -30,12 +38,13 @@ import type {
 export const revalidate = 60;
 
 export async function GET(
-  request: NextRequest
+  request: NextRequest,
 ): Promise<NextResponse> {
   const parsed = parseMarketsQuery(
-    request.nextUrl.searchParams
+    request.nextUrl.searchParams,
   );
 
+  // Never forward invalid user-controlled parameters upstream.
   if (!parsed.success) {
     return NextResponse.json(
       {
@@ -46,7 +55,7 @@ export async function GET(
         headers: {
           "Cache-Control": "no-store",
         },
-      }
+      },
     );
   }
 
@@ -56,6 +65,7 @@ export async function GET(
 
     const response: ApiResponse<MarketCoin[]> = {
       data,
+
       meta: {
         source: "live",
         fetchedAt: new Date().toISOString(),
@@ -72,15 +82,20 @@ export async function GET(
 
     console.warn(
       "[api/crypto/markets] upstream failure; serving fallback",
-      { status }
+      { status },
     );
 
+    // Preserve the same requested selection and pagination contract
+    // when the upstream provider is unavailable.
+    const data = selectFallbackMarkets(parsed.data);
+
     const response: ApiResponse<MarketCoin[]> = {
-      data: fallbackMarkets,
+      data,
+
       meta: {
         source: "fallback",
         fetchedAt: new Date().toISOString(),
-        count: fallbackMarkets.length,
+        count: data.length,
       },
     };
 

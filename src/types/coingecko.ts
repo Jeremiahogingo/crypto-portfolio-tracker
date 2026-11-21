@@ -2,17 +2,9 @@
 //
 // Raw response shapes for the CoinGecko API.
 //
-// These mirror CoinGecko's JSON exactly — snake_case, nullable fields, and
-// all. They are intentionally kept separate from our UI-facing domain types
-// so that a CoinGecko schema change only ripples through this file and the
-// mapping layer, not through every component.
-//
-// Reference: https://docs.coingecko.com/reference/coins-markets
+// These mirror CoinGecko's JSON and remain separate from the
+// application-facing domain types.
 
-/**
- * Response item from GET /coins/markets.
- * Only fields we actually consume are declared — the API returns more.
- */
 export interface CGMarketCoin {
   id: string;
   symbol: string;
@@ -45,48 +37,44 @@ export interface CGMarketCoin {
   };
 }
 
-/**
- * Response from GET /global.
- * The nested `data` wrapper is CoinGecko's, not ours — we keep the shape
- * as-is so the mapping layer is the single point of translation.
- */
+type CGNumericRecord = Record<
+  string,
+  number | null | undefined
+>;
+
 export interface CGGlobal {
   data: {
-    active_cryptocurrencies: number;
-    markets: number;
-    total_market_cap: Record<string, number>;
-    total_volume: Record<string, number>;
-    market_cap_percentage: Record<string, number>;
-    market_cap_change_percentage_24h_usd: number;
-    updated_at: number;
+    active_cryptocurrencies?: number | null;
+    markets?: number | null;
+    total_market_cap?: CGNumericRecord;
+    total_volume?: CGNumericRecord;
+    market_cap_percentage?: CGNumericRecord;
+    market_cap_change_percentage_24h_usd?: number | null;
+    updated_at?: number;
   };
 }
 
-/**
- * Response from GET /search/trending.
- * Trending items are wrapped in `item`, and prices are nested one level
- * deeper still — this is CoinGecko's quirky shape, not ours.
- */
 export interface CGTrending {
   coins: Array<{
     item: {
       id: string;
       name: string;
       symbol: string;
-      market_cap_rank: number;
+      market_cap_rank: number | null;
       thumb: string;
       small: string;
       large: string;
       slug: string;
       price_btc: number;
       score: number;
-      data: {
-        price: number;
-        price_btc: string;
-        price_change_percentage_24h: Record<string, number>;
-        market_cap: string;
-        total_volume: string;
-      };
+
+      data?: {
+        price?: number | null;
+        price_btc?: string;
+        price_change_percentage_24h?: CGNumericRecord;
+        market_cap?: string;
+        total_volume?: string;
+      } | null;
     };
   }>;
 }

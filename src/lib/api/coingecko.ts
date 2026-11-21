@@ -1,4 +1,3 @@
-
 /**
  * src/lib/api/coingecko.ts
  *
@@ -21,6 +20,8 @@ import type {
   CGMarketCoin,
   CGTrending,
 } from "@/types/coingecko";
+
+import type { MarketOrder } from "@/types/market";
 import { serverEnv } from "@/lib/env/server";
 
 // --------------------------------------------------
@@ -39,7 +40,7 @@ const REQUEST_TIMEOUT_MS = 10_000;
 export class CoinGeckoError extends Error {
   constructor(
     message: string,
-    public readonly status?: number
+    public readonly status?: number,
   ) {
     super(message);
     this.name = "CoinGeckoError";
@@ -73,7 +74,7 @@ interface FetchOptions {
  */
 async function cgFetch<T>(
   path: string,
-  options: FetchOptions = {}
+  options: FetchOptions = {},
 ): Promise<T> {
   const {
     revalidate = 60,
@@ -119,19 +120,19 @@ async function cgFetch<T>(
     if (timedOut) {
       throw new CoinGeckoError(
         "CoinGecko request timed out",
-        504
+        504,
       );
     }
 
     throw new CoinGeckoError(
-      "Network error contacting CoinGecko"
+      "Network error contacting CoinGecko",
     );
   }
 
   if (!response.ok) {
     throw new CoinGeckoError(
       `CoinGecko responded with HTTP ${response.status}`,
-      response.status
+      response.status,
     );
   }
 
@@ -140,7 +141,7 @@ async function cgFetch<T>(
   } catch {
     throw new CoinGeckoError(
       "CoinGecko returned an invalid JSON response",
-      502
+      502,
     );
   }
 }
@@ -152,6 +153,9 @@ async function cgFetch<T>(
 export interface GetMarketsParams {
   /** Target fiat or cryptocurrency currency. Defaults to USD. */
   vs_currency?: string;
+
+  /** Server-side market sorting. */
+  order?: MarketOrder;
 
   /** Number of coins per page (maximum 250). */
   per_page?: number;
@@ -170,15 +174,19 @@ export interface GetMarketsParams {
  * GET /coins/markets
  *
  * Used by Markets, Watchlist and Portfolio pages.
+ *
+ * Supported ordering is validated by the application API route
+ * before this function is called.
  */
 export async function getMarkets(
-  params: GetMarketsParams = {}
+  params: GetMarketsParams = {},
 ): Promise<CGMarketCoin[]> {
   return cgFetch<CGMarketCoin[]>("/coins/markets", {
     revalidate: 60,
+
     params: {
       vs_currency: params.vs_currency ?? "usd",
-      order: "market_cap_desc",
+      order: params.order ?? "market_cap_desc",
       per_page: params.per_page ?? 100,
       page: params.page ?? 1,
       sparkline: params.sparkline ?? false,
