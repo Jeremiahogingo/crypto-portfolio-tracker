@@ -10,6 +10,13 @@ import {
   formatPercent,
 } from "@/utils/format";
 
+interface StatCard {
+  label: string;
+  value: string;
+  sub?: string;
+  subClass?: string;
+}
+
 export default function MarketOverview() {
   const {
     stats,
@@ -22,8 +29,8 @@ export default function MarketOverview() {
 
   if (isLoading && !stats) {
     return (
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {[0, 1, 2, 3].map((index) => (
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        {[0, 1, 2, 3, 4].map((index) => (
           <Card key={index}>
             <Skeleton className="mb-3 h-4 w-24" />
             <Skeleton className="h-7 w-32" />
@@ -41,7 +48,7 @@ export default function MarketOverview() {
             Global market overview
           </h2>
 
-          <p className="text-sm text-secondary" role="alert">
+          <p role="alert" className="text-sm text-secondary">
             Global market statistics could not be loaded.
           </p>
 
@@ -51,14 +58,21 @@ export default function MarketOverview() {
             disabled={isFetching}
             className="rounded-lg border border-border px-3 py-2 text-sm font-medium text-text transition-colors hover:bg-surface-muted disabled:opacity-50"
           >
-            {isFetching ? "Retrying…" : "Retry"}
+            {isFetching ? "Retrying..." : "Retry"}
           </button>
         </div>
       </Card>
     );
   }
 
-  const cards = [
+  const activeCoins =
+    stats.activeCoins === null
+      ? "—"
+      : new Intl.NumberFormat(undefined, {
+          maximumFractionDigits: 0,
+        }).format(stats.activeCoins);
+
+  const cards: StatCard[] = [
     {
       label: "Global Market Cap",
       value:
@@ -69,10 +83,12 @@ export default function MarketOverview() {
         stats.marketCapChange24h === null
           ? "24h change unavailable"
           : `${formatPercent(stats.marketCapChange24h)} (24h)`,
-      subPositive:
-        stats.marketCapChange24h !== null &&
-        stats.marketCapChange24h >= 0,
-      hasChange: true,
+      subClass:
+        stats.marketCapChange24h === null
+          ? "text-secondary"
+          : stats.marketCapChange24h >= 0
+            ? "text-success"
+            : "text-danger",
     },
     {
       label: "24h Volume",
@@ -95,10 +111,19 @@ export default function MarketOverview() {
           ? "—"
           : `${stats.ethDominance.toFixed(1)}%`,
     },
+    {
+      label: "Active Cryptocurrencies",
+      value: activeCoins,
+      sub: "Global reported count",
+      subClass: "text-secondary",
+    },
   ];
 
   return (
-    <section aria-labelledby="global-market-heading" className="space-y-3">
+    <section
+      aria-labelledby="global-market-heading"
+      className="space-y-3"
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2
           id="global-market-heading"
@@ -110,7 +135,7 @@ export default function MarketOverview() {
         <div className="flex items-center gap-3">
           {isFetching && (
             <span className="text-xs text-secondary">
-              Updating…
+              Updating...
             </span>
           )}
 
@@ -122,15 +147,12 @@ export default function MarketOverview() {
       </div>
 
       {error && (
-        <p
-          role="status"
-          className="text-xs text-warning"
-        >
+        <p role="status" className="text-xs text-warning">
           The latest refresh failed. Showing the last available response.
         </p>
       )}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {cards.map((card) => (
           <Card key={card.label} hover>
             <p className="text-sm text-secondary">
@@ -141,16 +163,8 @@ export default function MarketOverview() {
               {card.value}
             </p>
 
-            {card.hasChange && card.sub && (
-              <p
-                className={`mt-1 text-xs ${
-                  stats.marketCapChange24h === null
-                    ? "text-secondary"
-                    : card.subPositive
-                      ? "text-success"
-                      : "text-danger"
-                }`}
-              >
+            {card.sub && (
+              <p className={`mt-1 text-xs ${card.subClass ?? "text-secondary"}`}>
                 {card.sub}
               </p>
             )}

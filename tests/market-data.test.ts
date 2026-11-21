@@ -17,6 +17,16 @@ import {
 
 import { selectFallbackMarkets } from "../src/lib/api/fallback-markets";
 
+import type { MarketCoin } from "../src/types/market";
+
+import {
+  getTopGainers,
+  getTopLosers,
+  getTopMovers,
+  MARKET_INTELLIGENCE_LIMIT,
+  MARKET_INTELLIGENCE_MIN_MARKET_CAP,
+} from "../src/lib/market-intelligence";
+
 // --------------------------------------------------
 // Trending fixtures
 // --------------------------------------------------
@@ -304,5 +314,272 @@ test("fallback pagination preserves the selected ordering", () => {
 
   assert.ok(
     firstPage[2]!.volume24h >= secondPage[0]!.volume24h,
+  );
+});
+
+// --------------------------------------------------
+// Market intelligence fixtures and ranking tests
+// --------------------------------------------------
+
+function makeMarketCoin(
+  overrides: Partial<MarketCoin> = {},
+): MarketCoin {
+  return {
+    id: "test-coin",
+    symbol: "TEST",
+    name: "Test Coin",
+    logoUrl: "https://example.com/coin.png",
+    price: 1,
+    change24h: 1,
+    marketCap: 50_000_000,
+    volume24h: 5_000_000,
+    rank: 1,
+    ...overrides,
+  };
+}
+
+test("market intelligence uses the configured top-100 universe", () => {
+  assert.equal(MARKET_INTELLIGENCE_LIMIT, 100);
+});
+
+test("top gainers include only positive eligible 24-hour changes", () => {
+  const coins = [
+    makeMarketCoin({
+      id: "negative",
+      rank: 1,
+      change24h: -12,
+    }),
+    makeMarketCoin({
+      id: "gainer-5",
+      rank: 2,
+      change24h: 5,
+    }),
+    makeMarketCoin({
+      id: "gainer-15",
+      rank: 3,
+      change24h: 15,
+    }),
+    makeMarketCoin({
+      id: "unchanged",
+      rank: 4,
+      change24h: 0,
+    }),
+    makeMarketCoin({
+      id: "gainer-9",
+      rank: 5,
+      change24h: 9,
+    }),
+  ];
+
+  const result = getTopGainers(coins);
+
+  assert.deepEqual(
+    result.map((coin) => coin.id),
+    ["gainer-15", "gainer-9", "gainer-5"],
+  );
+
+  assert.ok(result.every((coin) => coin.change24h > 0));
+});
+
+test("top losers include only negative eligible 24-hour changes", () => {
+  const coins = [
+    makeMarketCoin({
+      id: "gainer",
+      rank: 1,
+      change24h: 8,
+    }),
+    makeMarketCoin({
+      id: "loser-4",
+      rank: 2,
+      change24h: -4,
+    }),
+    makeMarketCoin({
+      id: "loser-12",
+      rank: 3,
+      change24h: -12,
+    }),
+    makeMarketCoin({
+      id: "unchanged",
+      rank: 4,
+      change24h: 0,
+    }),
+    makeMarketCoin({
+      id: "loser-7",
+      rank: 5,
+      change24h: -7,
+    }),
+  ];
+
+  const result = getTopLosers(coins);
+
+  assert.deepEqual(
+    result.map((coin) => coin.id),
+    ["loser-12", "loser-7", "loser-4"],
+  );
+
+  assert.ok(result.every((coin) => coin.change24h < 0));
+});
+
+test("market intelligence excludes assets ranked outside the top 100", () => {
+  const coins = [
+    makeMarketCoin({
+      id: "rank-100",
+      rank: 100,
+      change24h: 10,
+    }),
+    makeMarketCoin({
+      id: "rank-101",
+      rank: 101,
+      change24h: 500,
+    }),
+  ];
+
+  const result = getTopGainers(coins);
+
+  assert.deepEqual(
+    result.map((coin) => coin.id),
+    ["rank-100"],
+  );
+});
+
+test("market intelligence excludes assets at or below the minimum market cap", () => {
+  const coins = [
+    makeMarketCoin({
+      id: "above-threshold",
+      marketCap: MARKET_INTELLIGENCE_MIN_MARKET_CAP + 1,
+      change24h: 5,
+    }),
+    makeMarketCoin({
+      id: "at-threshold",
+      marketCap: MARKET_INTELLIGENCE_MIN_MARKET_CAP,
+      change24h: 100,
+    }),
+    makeMarketCoin({
+      id: "below-threshold",
+      marketCap: MARKET_INTELLIGENCE_MIN_MARKET_CAP - 1,
+      change24h: 200,
+    }),
+  ];
+
+  const result = getTopGainers(coins);
+
+  assert.deepEqual(
+    result.map((coin) => coin.id),
+    ["above-threshold"],
+  );
+});
+
+test("market intelligence excludes missing and non-finite percentage changes", () => {
+  const coins = [
+    makeMarketCoin({
+      id: "valid",
+      change24h: 4,
+    }),
+    makeMarketCoin({
+      id: "missing",
+      change24h: null,
+    }),
+    makeMarketCoin({
+      id: "not-finite",
+      change24h: Number.NaN,
+    }),
+  ];
+
+  const result = getTopGainers(coins);
+
+  assert.deepEqual(
+    result.map((coin) => coin.id),
+    ["valid"],
+  );
+});
+
+test("top movers rank absolute movement in both directions", () => {
+  const coins = [
+    makeMarketCoin({
+      id: "positive-8",
+      change24h: 8,
+    }),
+    makeMarketCoin({
+      id: "negative-14",
+      change24h: -14,
+    }),
+    makeMarketCoin({
+      id: "positive-3",
+      change24h: 3,
+    }),
+    makeMarketCoin({
+      id: "negative-10",
+      change24h: -10,
+    }),
+    makeMarketCoin({
+      id: "unchanged",
+      change24h: 0,
+    }),
+  ];
+
+  const result = getTopMovers(coins);
+
+  assert.deepEqual(
+    result.map((coin) => coin.id),
+    [
+      "negative-14",
+      "negative-10",
+      "positive-8",
+      "positive-3",
+    ],
+  );
+});
+
+test("market intelligence applies the requested result limit", () => {
+  const coins = Array.from({ length: 6 }, (_, index) =>
+    makeMarketCoin({
+      id: `coin-${index + 1}`,
+      rank: index + 1,
+      change24h: 10 - index,
+    }),
+  );
+
+  const result = getTopGainers(coins, 2);
+
+  assert.equal(result.length, 2);
+
+  assert.deepEqual(
+    result.map((coin) => coin.id),
+    ["coin-1", "coin-2"],
+  );
+});
+
+test("market intelligence returns no results for a non-positive limit", () => {
+  const coins = [
+    makeMarketCoin({
+      id: "gainer",
+      change24h: 5,
+    }),
+  ];
+
+  assert.deepEqual(getTopGainers(coins, 0), []);
+  assert.deepEqual(getTopLosers(coins, -1), []);
+  assert.deepEqual(getTopMovers(coins, 0), []);
+});
+
+test("market intelligence resolves equal movements deterministically", () => {
+  const coins = [
+    makeMarketCoin({
+      id: "lower-cap",
+      marketCap: 20_000_000,
+      change24h: 5,
+    }),
+    makeMarketCoin({
+      id: "higher-cap",
+      marketCap: 80_000_000,
+      change24h: 5,
+    }),
+  ];
+
+  const result = getTopGainers(coins);
+
+  assert.deepEqual(
+    result.map((coin) => coin.id),
+    ["higher-cap", "lower-cap"],
   );
 });

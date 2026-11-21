@@ -11,6 +11,10 @@ import DataSourceBadge from "@/components/ui/DataSourceBadge";
 import Card from "@/components/ui/Card";
 
 import { useMarkets } from "@/hooks/useMarkets";
+import {
+  MARKET_INTELLIGENCE_LIMIT,
+} from "@/lib/market-intelligence";
+
 import type { MarketOrder } from "@/types/market";
 
 const DEFAULT_PAGE_SIZE = 25;
@@ -21,6 +25,7 @@ export default function MarketsPage() {
   const [perPage, setPerPage] = useState(DEFAULT_PAGE_SIZE);
   const [order, setOrder] = useState<MarketOrder>(DEFAULT_ORDER);
 
+  // User-controlled, paginated market table.
   const {
     coins,
     meta,
@@ -33,6 +38,21 @@ export default function MarketsPage() {
     per_page: perPage,
     page,
     order,
+  });
+
+  // Independent, fixed dataset for market intelligence.
+  // This query is deliberately unaffected by table controls.
+  const {
+    coins: intelligenceCoins,
+    meta: intelligenceMeta,
+    isLoading: intelligenceIsLoading,
+    isFetching: intelligenceIsFetching,
+    error: intelligenceError,
+    refetch: refetchIntelligence,
+  } = useMarkets({
+    per_page: MARKET_INTELLIGENCE_LIMIT,
+    page: 1,
+    order: "market_cap_desc",
   });
 
   const hasNextPage =
@@ -59,7 +79,7 @@ export default function MarketsPage() {
         <div className="flex items-center gap-3">
           {isFetching && (
             <span className="text-xs text-secondary">
-              Updating…
+              Updating...
             </span>
           )}
 
@@ -104,8 +124,13 @@ export default function MarketsPage() {
       <TrendingCoins />
 
       <GainersLosers
-        coins={coins}
-        isLoading={isLoading}
+        coins={intelligenceCoins}
+        source={intelligenceMeta?.source}
+        fetchedAt={intelligenceMeta?.fetchedAt}
+        isLoading={intelligenceIsLoading}
+        isFetching={intelligenceIsFetching}
+        error={intelligenceError}
+        onRetry={() => void refetchIntelligence()}
       />
 
       <Card>
