@@ -10,7 +10,10 @@
  * - HTTP and malformed JSON responses become typed errors.
  *
  * Caching:
- * Uses Next.js Data Cache with endpoint-specific revalidation.
+ * - Uses the shared UpstreamRequestCoordinator.
+ * - Freshness remains endpoint-specific.
+ * - Successful responses can be reused for up to 15 minutes when
+ *   CoinGecko is unavailable or rate-limiting the application.
  */
 
 import "server-only";
@@ -23,6 +26,7 @@ import type {
 
 import type { MarketOrder } from "@/types/market";
 import { serverEnv } from "@/lib/env/server";
+import { coinGeckoCoordinator } from "@/lib/api/upstream-coordinator";
 
 // --------------------------------------------------
 // Configuration
@@ -33,6 +37,9 @@ const API_KEY = serverEnv.coinGeckoDemoApiKey;
 
 const REQUEST_TIMEOUT_MS = 10_000;
 
+// Maximum age for serving a previous successful response.
+const MAX_STALE_MS = 15 * 60 * 1_000;
+
 // --------------------------------------------------
 // Error type
 // --------------------------------------------------
@@ -41,6 +48,7 @@ export class CoinGeckoError extends Error {
   constructor(
     message: string,
     public readonly status?: number,
+    public readonly retryAfter?: string | null
   ) {
     super(message);
     this.name = "CoinGeckoError";
@@ -52,7 +60,7 @@ export class CoinGeckoError extends Error {
 // --------------------------------------------------
 
 interface FetchOptions {
-  /** Next.js Data Cache lifetime in seconds. */
+  /** Successful-response freshness duration in seconds. */
   revalidate?: number;
 
   /** Optional upstream query parameters. */
@@ -67,15 +75,16 @@ interface FetchOptions {
 // --------------------------------------------------
 
 /**
- * Executes an authenticated, cached GET request against CoinGecko.
+ * Executes an authenticated GET request against CoinGecko.
  *
- * Every public function uses this wrapper so timeout, authentication,
- * response validation and error handling remain centralized.
+ * The shared coordinator controls caching, concurrent request deduplication
+ * and rate-limit cooldown. This wrapper handles authentication, timeout,
+ * response validation and error conversion.
  */
 async function cgFetch<T>(
   path: string,
-  options: FetchOptions = {},
-): Promise<T> {
+  options: FetchOptions = {}
+) {
   const {
     revalidate = 60,
     params,
@@ -99,51 +108,63 @@ async function cgFetch<T>(
     headers["x-cg-demo-api-key"] = API_KEY;
   }
 
-  let response: Response;
+  // Include endpoint and query parameters in the key.
+  // API credentials are never included in the cache key.
+  const cacheKey = url.toString();
 
-  try {
-    response = await fetch(url.toString(), {
-      headers,
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      next: {
-        revalidate,
-      },
-    });
-  } catch (cause) {
-    const timedOut =
-      cause instanceof Error &&
-      (
-        cause.name === "TimeoutError" ||
-        cause.name === "AbortError"
-      );
+  return coinGeckoCoordinator.request<T>(
+    cacheKey,
+    revalidate * 1_000,
+    MAX_STALE_MS,
+    async () => {
+      let response: Response;
 
-    if (timedOut) {
-      throw new CoinGeckoError(
-        "CoinGecko request timed out",
-        504,
-      );
+      try {
+        response = await fetch(url.toString(), {
+          headers,
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+
+          // The application-level coordinator owns caching.
+          cache: "no-store",
+        });
+      } catch (cause) {
+        const timedOut =
+          cause instanceof Error &&
+          (
+            cause.name === "TimeoutError" ||
+            cause.name === "AbortError"
+          );
+
+        if (timedOut) {
+          throw new CoinGeckoError(
+            "CoinGecko request timed out",
+            504
+          );
+        }
+
+        throw new CoinGeckoError(
+          "Network error contacting CoinGecko"
+        );
+      }
+
+      if (!response.ok) {
+        throw new CoinGeckoError(
+          `CoinGecko responded with HTTP ${response.status}`,
+          response.status,
+          response.headers.get("retry-after")
+        );
+      }
+
+      try {
+        return (await response.json()) as T;
+      } catch {
+        throw new CoinGeckoError(
+          "CoinGecko returned an invalid JSON response",
+          502
+        );
+      }
     }
-
-    throw new CoinGeckoError(
-      "Network error contacting CoinGecko",
-    );
-  }
-
-  if (!response.ok) {
-    throw new CoinGeckoError(
-      `CoinGecko responded with HTTP ${response.status}`,
-      response.status,
-    );
-  }
-
-  try {
-    return (await response.json()) as T;
-  } catch {
-    throw new CoinGeckoError(
-      "CoinGecko returned an invalid JSON response",
-      502,
-    );
-  }
+  );
 }
 
 // --------------------------------------------------
@@ -175,12 +196,12 @@ export interface GetMarketsParams {
  *
  * Used by Markets, Watchlist and Portfolio pages.
  *
- * Supported ordering is validated by the application API route
- * before this function is called.
+ * Supported ordering and query parameters are validated by the application
+ * API route before this function is called.
  */
 export async function getMarkets(
-  params: GetMarketsParams = {},
-): Promise<CGMarketCoin[]> {
+  params: GetMarketsParams = {}
+) {
   return cgFetch<CGMarketCoin[]>("/coins/markets", {
     revalidate: 60,
 
@@ -199,7 +220,7 @@ export async function getMarkets(
 /**
  * GET /global
  */
-export async function getGlobal(): Promise<CGGlobal> {
+export async function getGlobal() {
   return cgFetch<CGGlobal>("/global", {
     revalidate: 120,
   });
@@ -208,7 +229,7 @@ export async function getGlobal(): Promise<CGGlobal> {
 /**
  * GET /search/trending
  */
-export async function getTrending(): Promise<CGTrending> {
+export async function getTrending() {
   return cgFetch<CGTrending>("/search/trending", {
     revalidate: 300,
   });

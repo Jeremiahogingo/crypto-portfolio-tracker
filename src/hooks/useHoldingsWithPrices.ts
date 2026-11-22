@@ -1,21 +1,30 @@
-// src/hooks/useHoldingsWithPrices.ts
-//
-// Merge persisted ledger holdings with client-fetched market quotes.
-//
-// Holdings come from the database. Market prices come from React Query.
-// The market response's source metadata is preserved so fallback data
-// cannot accidentally be treated as a verified live quote.
+/**
+ * src/hooks/useHoldingsWithPrices.ts
+ *
+ * Merge persisted ledger holdings with client-fetched market quotes.
+ *
+ * Holdings come from the database. Market prices come from React Query.
+ *
+ * Price provenance is preserved conservatively:
+ * - Live market prices can contribute to verified valuations.
+ * - Cached and static fallback prices remain indicative.
+ * - Missing prices remain unavailable.
+ */
 
 "use client";
 
 import { useMemo } from "react";
+
 import { useMarkets } from "@/hooks/useMarkets";
+
 import {
   computeAllocation,
   enrichHolding,
   summarizePortfolio,
 } from "@/lib/portfolio/calc";
+
 import type { Holding } from "@/db/schema";
+
 import type {
   AllocationSlice,
   HoldingWithPrice,
@@ -26,6 +35,7 @@ interface UseHoldingsWithPricesResult {
   holdings: HoldingWithPrice<Holding>[];
   summary: PortfolioSummary;
   allocation: AllocationSlice[];
+
   /** True while the market request is in flight. */
   isLoadingPrices: boolean;
 }
@@ -69,7 +79,13 @@ export function useHoldingsWithPrices(
         return enrichHolding(holding, {
           price: marketCoin.price,
           change24h: marketCoin.change24h,
-          source: meta?.source,
+
+          // Cached provider data must not be treated as a verified
+          // live quote by the portfolio valuation layer.
+          source:
+            meta?.source === "live"
+              ? "live"
+              : "fallback",
         });
       }),
     [rawHoldings, byId, meta?.source]

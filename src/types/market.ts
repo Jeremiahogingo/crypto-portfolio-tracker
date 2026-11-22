@@ -1,14 +1,17 @@
-// src/types/market.ts
-//
-// Domain types exposed to the client.
-//
-// CoinGecko-specific response shapes remain inside the server-side API
-// adapter. These normalized types are shared by the API and UI.
-//
-// Financial/data integrity:
-// - Missing prices and percentage changes remain null.
-// - Provider-supplied numeric zero is a valid value.
-// - Static fallback data is not represented as live data.
+/**
+ * src/types/market.ts
+ *
+ * Domain types exposed to the client.
+ *
+ * CoinGecko-specific response shapes remain inside the server-side API
+ * adapter. These normalized types are shared by the API and UI.
+ *
+ * Financial/data integrity:
+ * - Missing prices and percentage changes remain null.
+ * - Provider-supplied numeric zero is a valid value.
+ * - Cached provider responses are distinct from static fallback data.
+ * - Cached quotes are not automatically verified portfolio prices.
+ */
 
 export const MARKET_ORDER_OPTIONS = [
   "market_cap_desc",
@@ -19,7 +22,26 @@ export const MARKET_ORDER_OPTIONS = [
   "id_desc",
 ] as const;
 
-export type MarketOrder = (typeof MARKET_ORDER_OPTIONS)[number];
+export type MarketOrder =
+  (typeof MARKET_ORDER_OPTIONS)[number];
+
+/**
+ * Provenance of the market API response.
+ *
+ * live:
+ *   A successful provider response within the endpoint freshness window.
+ *
+ * cached:
+ *   A previously successful provider response reused after a refresh
+ *   failure or during a provider cooldown.
+ *
+ * fallback:
+ *   Static sample data bundled with the application.
+ */
+export type MarketDataSource =
+  | "live"
+  | "cached"
+  | "fallback";
 
 export interface MarketCoin {
   id: string;
@@ -66,8 +88,9 @@ export interface TrendingCoin {
 /** Envelope returned by the /api/crypto/* routes. */
 export interface ApiResponse<T> {
   data: T;
+
   meta: {
-    source: "live" | "fallback";
+    source: MarketDataSource;
     fetchedAt: string;
     count: number;
   };

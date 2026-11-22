@@ -5,6 +5,7 @@
 // - Client-side search scoped to the currently loaded page.
 // - Previous-page data retained during transitions.
 // - Explicit loading, empty and error states.
+// - Keyboard-accessible horizontal scrolling and semantic table headers.
 
 "use client";
 
@@ -104,9 +105,8 @@ export default function MarketsTable({
     );
   }, [coins, search]);
 
-const isTransitioning = isFetching || isPlaceholderData;
-
-const hasError = error !== null && error !== undefined;
+  const isTransitioning = isFetching || isPlaceholderData;
+  const hasError = error !== null && error !== undefined;
 
   return (
     <section aria-labelledby="markets-table-heading">
@@ -121,7 +121,10 @@ const hasError = error !== null && error !== undefined;
             </h2>
 
             {!isLoading && (
-              <p className="mt-1 text-xs text-secondary">
+              <p
+                className="mt-1 text-xs text-secondary"
+                aria-live="polite"
+              >
                 {filtered.length} of {coins.length} assets on this page
               </p>
             )}
@@ -142,7 +145,7 @@ const hasError = error !== null && error !== undefined;
                 onOrderChange(event.target.value as MarketOrder)
               }
               disabled={isTransitioning}
-              className="max-w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus:border-primary focus:outline-none disabled:opacity-50"
+              className="max-w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
             >
               {ORDER_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -165,7 +168,7 @@ const hasError = error !== null && error !== undefined;
                 onPageSizeChange(Number(event.target.value))
               }
               disabled={isTransitioning}
-              className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus:border-primary focus:outline-none disabled:opacity-50"
+              className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
             >
               {PAGE_SIZES.map((size) => (
                 <option key={size} value={size}>
@@ -181,6 +184,7 @@ const hasError = error !== null && error !== undefined;
             value={search}
             onChange={setSearch}
             placeholder="Search this page by name, symbol or ID..."
+            ariaLabel="Search the current market page by coin name, symbol, or ID"
             className="w-full sm:max-w-sm"
           />
 
@@ -189,7 +193,7 @@ const hasError = error !== null && error !== undefined;
               role="status"
               className="text-xs text-secondary"
             >
-              Loading market page…
+              Loading market page...
             </span>
           )}
         </div>
@@ -215,31 +219,59 @@ const hasError = error !== null && error !== undefined;
         </div>
       )}
 
-      <div className="overflow-x-auto">
+      <div
+        role="region"
+        aria-label="Cryptocurrency market data table"
+        tabIndex={0}
+        className="overflow-x-auto rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+      >
         <table className="w-full min-w-[760px]">
+          <caption className="sr-only">
+            Cryptocurrency market data. Search filters the currently
+            loaded page. Sorting and pagination are performed by the server.
+          </caption>
+
           <thead>
             <tr className="border-b border-border">
-              <th className="py-3 text-left text-xs font-medium uppercase tracking-wider text-secondary">
+              <th
+                scope="col"
+                className="py-3 text-left text-xs font-medium uppercase tracking-wider text-secondary"
+              >
                 Rank
               </th>
 
-              <th className="py-3 text-left text-xs font-medium uppercase tracking-wider text-secondary">
+              <th
+                scope="col"
+                className="py-3 text-left text-xs font-medium uppercase tracking-wider text-secondary"
+              >
                 Asset
               </th>
 
-              <th className="py-3 text-right text-xs font-medium uppercase tracking-wider text-secondary">
+              <th
+                scope="col"
+                className="py-3 text-right text-xs font-medium uppercase tracking-wider text-secondary"
+              >
                 Price
               </th>
 
-              <th className="py-3 text-right text-xs font-medium uppercase tracking-wider text-secondary">
+              <th
+                scope="col"
+                className="py-3 text-right text-xs font-medium uppercase tracking-wider text-secondary"
+              >
                 24h change
               </th>
 
-              <th className="py-3 text-right text-xs font-medium uppercase tracking-wider text-secondary">
+              <th
+                scope="col"
+                className="py-3 text-right text-xs font-medium uppercase tracking-wider text-secondary"
+              >
                 Market cap
               </th>
 
-              <th className="py-3 text-right text-xs font-medium uppercase tracking-wider text-secondary">
+              <th
+                scope="col"
+                className="py-3 text-right text-xs font-medium uppercase tracking-wider text-secondary"
+              >
                 Volume (24h)
               </th>
             </tr>
@@ -275,8 +307,8 @@ const hasError = error !== null && error !== undefined;
             )}
 
             {!isLoading &&
-              !error &&
-              filtered.length === 0 && (
+              filtered.length === 0 &&
+              (coins.length > 0 || !hasError) && (
                 <tr>
                   <td
                     colSpan={6}
@@ -367,6 +399,7 @@ const hasError = error !== null && error !== undefined;
         <div className="flex items-center gap-2">
           <button
             type="button"
+            aria-label="Previous market page"
             onClick={() => onPageChange(page - 1)}
             disabled={page <= 1 || isTransitioning}
             className="rounded-lg border border-border px-3 py-2 text-sm font-medium text-text transition-colors hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-40"
@@ -374,12 +407,17 @@ const hasError = error !== null && error !== undefined;
             Previous
           </button>
 
-          <span className="min-w-8 text-center text-sm font-medium text-text">
+          <span
+            aria-current="page"
+            aria-label={`Page ${page}`}
+            className="min-w-8 text-center text-sm font-medium text-text"
+          >
             {page}
           </span>
 
           <button
             type="button"
+            aria-label="Next market page"
             onClick={() => onPageChange(page + 1)}
             disabled={!hasNextPage || isTransitioning}
             className="rounded-lg border border-border px-3 py-2 text-sm font-medium text-text transition-colors hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-40"

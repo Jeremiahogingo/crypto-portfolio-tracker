@@ -14,6 +14,10 @@ import {
   normalizeGlobal,
   normalizeTrending,
 } from "../src/lib/api/normalize";
+import {
+  normalizeMarketsParams,
+  queryKeys,
+} from "../src/lib/query/keys";
 
 import { selectFallbackMarkets } from "../src/lib/api/fallback-markets";
 
@@ -582,4 +586,88 @@ test("market intelligence resolves equal movements deterministically", () => {
     result.map((coin) => coin.id),
     ["higher-cap", "lower-cap"],
   );
+});
+// --------------------------------------------------
+// Market query normalization and cache-key tests
+// --------------------------------------------------
+
+test("market query defaults share a cache key with explicit defaults", () => {
+  const defaultKey = queryKeys.markets();
+
+  const explicitDefaultsKey = queryKeys.markets({
+    vs_currency: "USD",
+    order: "market_cap_desc",
+    per_page: 100,
+    page: 1,
+    sparkline: false,
+  });
+
+  assert.deepEqual(defaultKey, explicitDefaultsKey);
+});
+
+test("market query normalization matches currency and coin ID normalization", () => {
+  const normalized = normalizeMarketsParams({
+    vs_currency: " USD ",
+    ids: [" Bitcoin ", "ETHEREUM"],
+  });
+
+  assert.equal(normalized.vs_currency, "usd");
+
+  assert.deepEqual(
+    normalized.ids,
+    ["bitcoin", "ethereum"],
+  );
+});
+
+test("market query cache keys preserve requested coin ID order", () => {
+  const forward = queryKeys.markets({
+    ids: ["bitcoin", "ethereum"],
+    per_page: 2,
+  });
+
+  const reversed = queryKeys.markets({
+    ids: ["ethereum", "bitcoin"],
+    per_page: 2,
+  });
+
+  assert.notDeepEqual(forward, reversed);
+});
+
+test("different market request dimensions retain separate cache keys", () => {
+  const defaultKey = queryKeys.markets();
+
+  assert.notDeepEqual(
+    defaultKey,
+    queryKeys.markets({ per_page: 50 }),
+  );
+
+  assert.notDeepEqual(
+    defaultKey,
+    queryKeys.markets({ page: 2 }),
+  );
+
+  assert.notDeepEqual(
+    defaultKey,
+    queryKeys.markets({ order: "volume_desc" }),
+  );
+
+  assert.notDeepEqual(
+    defaultKey,
+    queryKeys.markets({ vs_currency: "eur" }),
+  );
+
+  assert.notDeepEqual(
+    defaultKey,
+    queryKeys.markets({ sparkline: true }),
+  );
+});
+
+test("the market root key matches all market query keys", () => {
+  const root = queryKeys.marketsRoot();
+  const marketKey = queryKeys.markets({
+    per_page: 25,
+    page: 2,
+  });
+
+  assert.deepEqual(marketKey.slice(0, root.length), root);
 });

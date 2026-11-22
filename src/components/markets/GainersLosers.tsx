@@ -11,12 +11,19 @@ import {
   getTopLosers,
 } from "@/lib/market-intelligence";
 
-import type { MarketCoin } from "@/types/market";
-import { formatPrice, formatPercent } from "@/utils/format";
+import type {
+  MarketCoin,
+  MarketDataSource,
+} from "@/types/market";
+
+import {
+  formatPrice,
+  formatPercent,
+} from "@/utils/format";
 
 interface GainersLosersProps {
   coins: MarketCoin[];
-  source?: "live" | "fallback";
+  source?: MarketDataSource;
   fetchedAt?: string;
   isLoading: boolean;
   isFetching: boolean;
@@ -59,7 +66,11 @@ function CoinRow({
         </p>
 
         <Badge
-          variant={direction === "gainer" ? "success" : "danger"}
+          variant={
+            direction === "gainer"
+              ? "success"
+              : "danger"
+          }
         >
           {formatPercent(coin.change24h)}
         </Badge>

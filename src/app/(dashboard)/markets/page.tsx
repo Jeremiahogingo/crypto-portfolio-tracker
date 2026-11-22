@@ -1,6 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import {
+  useIsFetching,
+  useQueryClient,
+} from "@tanstack/react-query";
 
 import MarketOverview from "@/components/markets/MarketOverview";
 import TrendingCoins from "@/components/markets/TrendingCoins";
@@ -11,6 +15,8 @@ import DataSourceBadge from "@/components/ui/DataSourceBadge";
 import Card from "@/components/ui/Card";
 
 import { useMarkets } from "@/hooks/useMarkets";
+import { queryKeys } from "@/lib/query/keys";
+
 import {
   MARKET_INTELLIGENCE_LIMIT,
 } from "@/lib/market-intelligence";
@@ -21,9 +27,12 @@ const DEFAULT_PAGE_SIZE = 25;
 const DEFAULT_ORDER: MarketOrder = "market_cap_desc";
 
 export default function MarketsPage() {
+  const queryClient = useQueryClient();
+
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(DEFAULT_PAGE_SIZE);
   const [order, setOrder] = useState<MarketOrder>(DEFAULT_ORDER);
+  const [refreshRequested, setRefreshRequested] = useState(false);
 
   // User-controlled, paginated market table.
   const {
@@ -41,7 +50,6 @@ export default function MarketsPage() {
   });
 
   // Independent, fixed dataset for market intelligence.
-  // This query is deliberately unaffected by table controls.
   const {
     coins: intelligenceCoins,
     meta: intelligenceMeta,
@@ -54,6 +62,25 @@ export default function MarketsPage() {
     page: 1,
     order: "market_cap_desc",
   });
+
+  // Track active queries across all visible market-data sections.
+  const marketFetchCount = useIsFetching({
+    queryKey: queryKeys.marketsRoot(),
+  });
+
+  const globalFetchCount = useIsFetching({
+    queryKey: queryKeys.global(),
+  });
+
+  const trendingFetchCount = useIsFetching({
+    queryKey: queryKeys.trending(),
+  });
+
+  const isRefreshing =
+    refreshRequested ||
+    marketFetchCount > 0 ||
+    globalFetchCount > 0 ||
+    trendingFetchCount > 0;
 
   const hasNextPage =
     !isPlaceholderData &&
@@ -69,6 +96,30 @@ export default function MarketsPage() {
     setPerPage(nextPageSize);
   }
 
+  async function handleRefreshAll() {
+    if (refreshRequested) return;
+
+    setRefreshRequested(true);
+
+    try {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.marketsRoot(),
+        }),
+
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.global(),
+        }),
+
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.trending(),
+        }),
+      ]);
+    } finally {
+      setRefreshRequested(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -77,9 +128,12 @@ export default function MarketsPage() {
         </h1>
 
         <div className="flex items-center gap-3">
-          {isFetching && (
-            <span className="text-xs text-secondary">
-              Updating...
+          {isRefreshing && (
+            <span
+              role="status"
+              className="text-xs text-secondary"
+            >
+              Updating market data...
             </span>
           )}
 
@@ -90,11 +144,12 @@ export default function MarketsPage() {
 
           <button
             type="button"
-            onClick={() => void refetch()}
-            disabled={isFetching}
+            onClick={() => void handleRefreshAll()}
+            disabled={isRefreshing}
+            aria-label="Refresh all market data"
             className="rounded-lg border border-border px-3 py-2 text-sm font-medium text-text transition-colors hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Refresh
+            {isRefreshing ? "Refreshing..." : "Refresh"}
           </button>
         </div>
       </div>
@@ -113,7 +168,7 @@ export default function MarketsPage() {
               disabled={isFetching}
               className="rounded-lg border border-border px-3 py-2 text-sm font-medium text-text hover:bg-surface-muted disabled:opacity-50"
             >
-              Retry
+              Retry table
             </button>
           </div>
         </Card>

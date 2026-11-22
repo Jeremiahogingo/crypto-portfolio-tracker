@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/portfolio-ledger.test.ts tests/analytics-adjustments.test.ts tests/portfolio-valuation.test.ts tests/market-normalize.test.ts tests/market-data.test.ts tests/safe-redirect.test.ts tests/api-validation.test.ts tests/env-validation.test.ts",
+    "test": "tsx --test tests/portfolio-ledger.test.ts tests/analytics-adjustments.test.ts tests/portfolio-valuation.test.ts tests/market-normalize.test.ts tests/market-data.test.ts tests/safe-redirect.test.ts tests/api-validation.test.ts tests/env-validation.test.ts tests/upstream-protection.test.ts",
     "test:db": "tsx tests/ledger-database.integration.ts"
   },
   "dependencies": {

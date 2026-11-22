@@ -1,10 +1,9 @@
 // src/hooks/useMarkets.ts
 //
-// Shared market-data query for Markets, Watchlist and Portfolio.
+// Shared market-data query for Markets, Watchlist, Portfolio,
+// dashboard widgets, alerts, and market selectors.
 //
-// Query parameters participate in the React Query key, so changing
-// pagination or ordering creates the correct cache entry.
-//
+// Query parameters participate in a canonical React Query key.
 // keepPreviousData prevents table flicker during page and sort changes.
 
 "use client";
@@ -12,7 +11,11 @@
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 
 import { getJson } from "@/lib/api/client";
-import { queryKeys } from "@/lib/query/keys";
+import {
+  normalizeMarketsParams,
+  queryKeys,
+} from "@/lib/query/keys";
+
 import type { GetMarketsParams } from "@/lib/api/coingecko";
 import type { ApiResponse, MarketCoin } from "@/types/market";
 
@@ -24,33 +27,24 @@ export function useMarkets(
   params: GetMarketsParams = {},
   options: UseMarketsOptions = {},
 ) {
+  const normalizedParams = normalizeMarketsParams(params);
+
   const query = useQuery<ApiResponse<MarketCoin[]>>({
-    queryKey: queryKeys.markets(params),
+    queryKey: queryKeys.markets(normalizedParams),
 
     queryFn: ({ signal }) => {
       const qs = new URLSearchParams();
 
-      if (params.per_page) {
-        qs.set("per_page", String(params.per_page));
+      qs.set("vs_currency", normalizedParams.vs_currency);
+      qs.set("order", normalizedParams.order);
+      qs.set("per_page", String(normalizedParams.per_page));
+      qs.set("page", String(normalizedParams.page));
+
+      if (normalizedParams.ids?.length) {
+        qs.set("ids", normalizedParams.ids.join(","));
       }
 
-      if (params.page) {
-        qs.set("page", String(params.page));
-      }
-
-      if (params.vs_currency) {
-        qs.set("vs_currency", params.vs_currency);
-      }
-
-      if (params.order) {
-        qs.set("order", params.order);
-      }
-
-      if (params.ids?.length) {
-        qs.set("ids", params.ids.join(","));
-      }
-
-      if (params.sparkline) {
+      if (normalizedParams.sparkline) {
         qs.set("sparkline", "true");
       }
 

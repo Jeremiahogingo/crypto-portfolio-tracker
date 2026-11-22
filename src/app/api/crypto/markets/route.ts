@@ -14,16 +14,14 @@
  * - Explicit coin ID filtering.
  * - Optional seven-day sparklines.
  *
- * When CoinGecko is unavailable, fallback results respect the requested
- * coin IDs, ordering and pagination.
+ * When CoinGecko is unavailable, a recent successful upstream response
+ * is served by the coordinator. Static fallback results are used only
+ * when no usable successful response is available.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 
-import {
-  CoinGeckoError,
-  getMarkets,
-} from "@/lib/api/coingecko";
+import { getMarkets } from "@/lib/api/coingecko";
 
 import { normalizeCoin } from "@/lib/api/normalize";
 import { parseMarketsQuery } from "@/lib/api/route-validation";
@@ -34,14 +32,44 @@ import type {
   MarketCoin,
 } from "@/types/market";
 
-// Revalidate market responses every 60 seconds.
-export const revalidate = 60;
+// Do not statically generate or cache this route response.
+export const dynamic = "force-dynamic";
+
+function getErrorStatus(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null) {
+    return undefined;
+  }
+
+  if (
+    "status" in error &&
+    typeof error.status === "number"
+  ) {
+    return error.status;
+  }
+
+  return undefined;
+}
+
+function getErrorRetryAt(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null) {
+    return undefined;
+  }
+
+  if (
+    "retryAt" in error &&
+    typeof error.retryAt === "number"
+  ) {
+    return error.retryAt;
+  }
+
+  return undefined;
+}
 
 export async function GET(
-  request: NextRequest,
+  request: NextRequest
 ): Promise<NextResponse> {
   const parsed = parseMarketsQuery(
-    request.nextUrl.searchParams,
+    request.nextUrl.searchParams
   );
 
   // Never forward invalid user-controlled parameters upstream.
@@ -55,38 +83,47 @@ export async function GET(
         headers: {
           "Cache-Control": "no-store",
         },
-      },
+      }
     );
   }
 
   try {
-    const raw = await getMarkets(parsed.data);
-    const data = raw.map(normalizeCoin);
+    const upstream = await getMarkets(parsed.data);
+
+    const data = upstream.data.map(normalizeCoin);
 
     const response: ApiResponse<MarketCoin[]> = {
       data,
 
       meta: {
-        source: "live",
-        fetchedAt: new Date().toISOString(),
+        source: upstream.source,
+        fetchedAt: upstream.fetchedAt,
         count: data.length,
       },
     };
 
-    return NextResponse.json(response);
+    return NextResponse.json(response, {
+      headers: {
+        "Cache-Control": "no-store, max-age=0",
+      },
+    });
   } catch (error) {
-    const status =
-      error instanceof CoinGeckoError
-        ? error.status
-        : undefined;
+    const status = getErrorStatus(error);
+    const retryAt = getErrorRetryAt(error);
 
     console.warn(
       "[api/crypto/markets] upstream failure; serving fallback",
-      { status },
+      {
+        status,
+        retryAt,
+        message:
+          error instanceof Error
+            ? error.message
+            : "Unknown upstream error",
+      }
     );
 
-    // Preserve the same requested selection and pagination contract
-    // when the upstream provider is unavailable.
+    // Preserve the same requested selection and pagination contract.
     const data = selectFallbackMarkets(parsed.data);
 
     const response: ApiResponse<MarketCoin[]> = {
@@ -99,6 +136,10 @@ export async function GET(
       },
     };
 
-    return NextResponse.json(response);
+    return NextResponse.json(response, {
+      headers: {
+        "Cache-Control": "no-store, max-age=0",
+      },
+    });
   }
 }
