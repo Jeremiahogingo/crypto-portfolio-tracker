@@ -7,6 +7,7 @@ interface SearchInputProps {
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
+  ariaLabel?: string;
 }
 
 export default function SearchInput({
@@ -14,25 +15,35 @@ export default function SearchInput({
   onChange,
   placeholder = "Search...",
   className = "",
+  ariaLabel,
 }: SearchInputProps) {
   return (
     <div className={`relative ${className}`}>
-      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-secondary text-sm">
+      <span
+        aria-hidden="true"
+        className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-secondary"
+      >
         🔍
       </span>
+
       <input
-        type="text"
+        type="search"
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="w-full bg-surface border border-white/5 rounded-lg py-2 pl-10 pr-4 text-sm text-text placeholder-secondary focus:outline-none focus:border-primary transition-colors"
+        aria-label={ariaLabel ?? placeholder}
+        className="w-full rounded-lg border border-border bg-surface py-2 pl-10 pr-10 text-sm text-text placeholder-secondary transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
       />
-      {value && (
+
+      {value.length > 0 && (
         <button
+          type="button"
           onClick={() => onChange("")}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-secondary hover:text-text"
+          aria-label="Clear search"
+          title="Clear search"
+          className="absolute right-3 top-1/2 -translate-y-1/2 rounded text-secondary transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         >
-          ✕
+          ×
         </button>
       )}
     </div>

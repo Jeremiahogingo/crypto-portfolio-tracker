@@ -2,11 +2,11 @@
 //
 // Maps CoinGecko raw responses into application domain types.
 //
-// Price availability is preserved explicitly:
-// - number (including 0): provider supplied a valid numeric value
-// - null: provider omitted or supplied an invalid value
+// Price/data availability is preserved explicitly:
+// - finite number: valid provider-supplied numeric value
+// - null: missing or invalid provider value
 //
-// Never use the general zero-defaulting helper for market prices.
+// Never default missing market values to zero.
 
 import type {
   CGGlobal,
@@ -20,13 +20,8 @@ import type {
   TrendingCoin,
 } from "@/types/market";
 
-/** General numeric fallback for non-price statistics. */
-const n = (value: number | null | undefined): number =>
-  value ?? 0;
-
-/** Accept finite, non-negative market prices. Preserve a genuine zero. */
-function normalizePrice(
-  value: number | null | undefined
+function normalizeNonNegativeNumber(
+  value: number | null | undefined,
 ): number | null {
   if (
     typeof value !== "number" ||
@@ -41,7 +36,7 @@ function normalizePrice(
 
 /** Accept finite positive or negative percentage changes. */
 function normalizePercentage(
-  value: number | null | undefined
+  value: number | null | undefined,
 ): number | null {
   if (
     typeof value !== "number" ||
@@ -53,6 +48,12 @@ function normalizePercentage(
   return value;
 }
 
+function nonNegativeOrZero(
+  value: number | null | undefined,
+): number {
+  return normalizeNonNegativeNumber(value) ?? 0;
+}
+
 export function normalizeCoin(cg: CGMarketCoin): MarketCoin {
   return {
     id: cg.id,
@@ -60,46 +61,68 @@ export function normalizeCoin(cg: CGMarketCoin): MarketCoin {
     name: cg.name,
     logoUrl: cg.image,
 
-    // Do not convert missing price information into a false $0 quote.
-    price: normalizePrice(cg.current_price),
+    price: normalizeNonNegativeNumber(cg.current_price),
     change24h: normalizePercentage(
-      cg.price_change_percentage_24h
+      cg.price_change_percentage_24h,
     ),
 
-    marketCap: n(cg.market_cap),
-    volume24h: n(cg.total_volume),
-    rank: n(cg.market_cap_rank),
+    marketCap: nonNegativeOrZero(cg.market_cap),
+    volume24h: nonNegativeOrZero(cg.total_volume),
+    rank: nonNegativeOrZero(cg.market_cap_rank),
     sparkline: cg.sparkline_in_7d?.price,
   };
 }
 
 export function normalizeGlobal(
-  cg: CGGlobal
+  cg: CGGlobal,
 ): GlobalMarketStats {
   const data = cg.data;
 
   return {
-    totalMarketCap: data.total_market_cap.usd ?? 0,
-    totalVolume: data.total_volume.usd ?? 0,
-    btcDominance: data.market_cap_percentage.btc ?? 0,
-    ethDominance: data.market_cap_percentage.eth ?? 0,
-    activeCoins: data.active_cryptocurrencies ?? 0,
-    marketCapChange24h:
-      data.market_cap_change_percentage_24h_usd ?? 0,
+    totalMarketCap: normalizeNonNegativeNumber(
+      data.total_market_cap?.usd,
+    ),
+
+    totalVolume: normalizeNonNegativeNumber(
+      data.total_volume?.usd,
+    ),
+
+    btcDominance: normalizeNonNegativeNumber(
+      data.market_cap_percentage?.btc,
+    ),
+
+    ethDominance: normalizeNonNegativeNumber(
+      data.market_cap_percentage?.eth,
+    ),
+
+    activeCoins: normalizeNonNegativeNumber(
+      data.active_cryptocurrencies,
+    ),
+
+    marketCapChange24h: normalizePercentage(
+      data.market_cap_change_percentage_24h_usd,
+    ),
   };
 }
 
 export function normalizeTrending(
-  cg: CGTrending
+  cg: CGTrending,
 ): TrendingCoin[] {
   return cg.coins.map(({ item }) => ({
     id: item.id,
     name: item.name,
     symbol: item.symbol.toUpperCase(),
+
     logoUrl: item.small || item.thumb || item.large,
-    rank: item.market_cap_rank ?? 0,
-    price: item.data?.price ?? 0,
-    change24h:
-      item.data?.price_change_percentage_24h?.usd ?? 0,
+
+    rank: nonNegativeOrZero(item.market_cap_rank),
+
+    price: normalizeNonNegativeNumber(
+      item.data?.price,
+    ),
+
+    change24h: normalizePercentage(
+      item.data?.price_change_percentage_24h?.usd,
+    ),
   }));
 }

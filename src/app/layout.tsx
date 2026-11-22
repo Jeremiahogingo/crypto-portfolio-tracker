@@ -1,7 +1,9 @@
-
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import Script from "next/script";
+
 import "./globals.css";
+
 import Providers from "@/components/layout/Providers";
 
 const inter = Inter({
@@ -10,19 +12,45 @@ const inter = Inter({
   variable: "--font-inter",
 });
 
+/**
+ * Runs before React hydration to apply the persisted theme.
+ *
+ * This must use the same storage key, supported values, default theme,
+ * HTML class and data attribute as ThemeContext.
+ *
+ * It deliberately does not:
+ * - Render conditionally based on typeof window.
+ * - Modify localStorage.
+ * - Manage React state.
+ * - Register event listeners.
+ *
+ * ThemeContext remains the single source of truth for theme state.
+ */
 const themeBootstrap = `
 (function () {
+  var root = document.documentElement;
+  var theme = "dark";
+
   try {
-    const savedTheme = localStorage.getItem("theme");
-    const theme = savedTheme === "light" ? "light" : "dark";
+    var savedTheme = localStorage.getItem("theme");
 
-    const root = document.documentElement;
+    if (savedTheme === "dark" || savedTheme === "light") {
+      theme = savedTheme;
+    }
+  } catch (error) {
+    // Keep the application usable when browser storage is unavailable.
+  }
 
-    root.classList.toggle("dark", theme === "dark");
-    root.dataset.theme = theme;
-  } catch {
-    document.documentElement.classList.add("dark");
-    document.documentElement.dataset.theme = "dark";
+  root.classList.toggle("dark", theme === "dark");
+  root.dataset.theme = theme;
+
+  var themeColor = document.querySelector(
+    'meta[name="theme-color"]'
+  );
+
+  if (themeColor) {
+    themeColor.content =
+      theme === "dark" ? "#0B1220" : "#F4F7FC";
   }
 })();
 `;
@@ -52,16 +80,20 @@ export default function RootLayout({
           name="theme-color"
           content="#0B1220"
         />
+      </head>
 
-        <script
+      <body className={`${inter.variable} ${inter.className}`}>
+        <Script
+          id="theme-bootstrap"
+          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{
             __html: themeBootstrap,
           }}
         />
-      </head>
 
-      <body className={`${inter.variable} ${inter.className}`}>
-        <Providers>{children}</Providers>
+        <Providers>
+          {children}
+        </Providers>
       </body>
     </html>
   );

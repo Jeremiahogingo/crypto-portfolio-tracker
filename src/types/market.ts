@@ -1,13 +1,47 @@
-// src/types/market.ts
-//
-// Domain types exposed to the client.
-//
-// CoinGecko-specific response shapes remain inside the server-side API
-// adapter. These normalized types are shared by the API and UI.
-//
-// Important financial rule:
-// A missing market quote is represented by null, not zero.
-// A provider-supplied numeric zero remains a valid price.
+/**
+ * src/types/market.ts
+ *
+ * Domain types exposed to the client.
+ *
+ * CoinGecko-specific response shapes remain inside the server-side API
+ * adapter. These normalized types are shared by the API and UI.
+ *
+ * Financial/data integrity:
+ * - Missing prices and percentage changes remain null.
+ * - Provider-supplied numeric zero is a valid value.
+ * - Cached provider responses are distinct from static fallback data.
+ * - Cached quotes are not automatically verified portfolio prices.
+ */
+
+export const MARKET_ORDER_OPTIONS = [
+  "market_cap_desc",
+  "market_cap_asc",
+  "volume_desc",
+  "volume_asc",
+  "id_asc",
+  "id_desc",
+] as const;
+
+export type MarketOrder =
+  (typeof MARKET_ORDER_OPTIONS)[number];
+
+/**
+ * Provenance of the market API response.
+ *
+ * live:
+ *   A successful provider response within the endpoint freshness window.
+ *
+ * cached:
+ *   A previously successful provider response reused after a refresh
+ *   failure or during a provider cooldown.
+ *
+ * fallback:
+ *   Static sample data bundled with the application.
+ */
+export type MarketDataSource =
+  | "live"
+  | "cached"
+  | "fallback";
 
 export interface MarketCoin {
   id: string;
@@ -15,35 +49,31 @@ export interface MarketCoin {
   name: string;
   logoUrl: string;
 
-  /** Null means CoinGecko did not provide a valid price. */
   price: number | null;
-
-  /** Null means the 24-hour percentage change is unavailable. */
   change24h: number | null;
 
   marketCap: number;
   volume24h: number;
   rank: number;
 
-  /** Seven-day price array (168 hourly points), when requested. */
   sparkline?: number[];
 }
 
 /** Aggregate market statistics shown in the Markets overview. */
 export interface GlobalMarketStats {
-  totalMarketCap: number;
-  totalVolume: number;
-  btcDominance: number;
-  ethDominance: number;
-  activeCoins: number;
-  marketCapChange24h: number;
+  totalMarketCap: number | null;
+  totalVolume: number | null;
+  btcDominance: number | null;
+  ethDominance: number | null;
+  activeCoins: number | null;
+  marketCapChange24h: number | null;
 }
 
 /**
  * A coin in the Trending rail.
  *
- * This is distinct from MarketCoin because the trending endpoint returns
- * a smaller response shape. Its existing numeric price contract is retained.
+ * Trending responses can omit price and percentage data.
+ * Preserve that absence rather than manufacturing zero values.
  */
 export interface TrendingCoin {
   id: string;
@@ -51,15 +81,16 @@ export interface TrendingCoin {
   symbol: string;
   logoUrl: string;
   rank: number;
-  price: number;
-  change24h: number;
+  price: number | null;
+  change24h: number | null;
 }
 
 /** Envelope returned by the /api/crypto/* routes. */
 export interface ApiResponse<T> {
   data: T;
+
   meta: {
-    source: "live" | "fallback";
+    source: MarketDataSource;
     fetchedAt: string;
     count: number;
   };

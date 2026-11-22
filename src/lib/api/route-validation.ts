@@ -1,4 +1,3 @@
-
 /**
  * src/lib/api/route-validation.ts
  *
@@ -9,10 +8,13 @@
  * - Validate numeric inputs before using them.
  * - Restrict pagination and result counts.
  * - Validate CoinGecko currency and coin ID formats.
+ * - Validate market ordering against supported options.
  * - Reject unsafe external URLs from RSS feeds.
  */
 
 import { z } from "zod";
+
+import { MARKET_ORDER_OPTIONS } from "@/types/market";
 
 // --------------------------------------------------
 // Limits
@@ -49,7 +51,7 @@ export type QueryParseResult<T> =
  */
 function readUniqueParameters(
   searchParams: URLSearchParams,
-  names: string[]
+  names: string[],
 ): QueryParseResult<Record<string, string>> {
   const values: Record<string, string> = {};
 
@@ -80,7 +82,7 @@ function readUniqueParameters(
 
 const positiveInteger = (
   defaultValue: number,
-  maximum: number
+  maximum: number,
 ) =>
   z
     .string()
@@ -92,7 +94,7 @@ const positiveInteger = (
         .number()
         .int()
         .min(1)
-        .max(maximum)
+        .max(maximum),
     );
 
 const CoinIdsSchema = z
@@ -104,28 +106,29 @@ const CoinIdsSchema = z
       ? undefined
       : value
           .split(",")
-          .map((id) => id.trim().toLowerCase())
+          .map((id) => id.trim().toLowerCase()),
   )
   .refine(
     (ids) =>
       ids === undefined ||
       (ids.length >= 1 && ids.length <= MAX_MARKET_COIN_IDS),
-    `Between 1 and ${MAX_MARKET_COIN_IDS} coin IDs are allowed`
+    `Between 1 and ${MAX_MARKET_COIN_IDS} coin IDs are allowed`,
   )
   .refine(
     (ids) =>
       ids === undefined ||
-      ids.every((id) =>
-        /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id) &&
-        id.length <= 64
+      ids.every(
+        (id) =>
+          /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id) &&
+          id.length <= 64,
       ),
-    "One or more coin IDs have an invalid format"
+    "One or more coin IDs have an invalid format",
   )
   .refine(
     (ids) =>
       ids === undefined ||
       new Set(ids).size === ids.length,
-    "Duplicate coin IDs are not allowed"
+    "Duplicate coin IDs are not allowed",
   );
 
 const MarketsQuerySchema = z
@@ -136,18 +139,22 @@ const MarketsQuerySchema = z
       .toLowerCase()
       .regex(
         /^[a-z0-9]{2,10}$/,
-        "Currency must be a valid currency code"
+        "Currency must be a valid currency code",
       )
       .default("usd"),
 
+    order: z
+      .enum(MARKET_ORDER_OPTIONS)
+      .default("market_cap_desc"),
+
     per_page: positiveInteger(
       100,
-      MAX_MARKET_PAGE_SIZE
+      MAX_MARKET_PAGE_SIZE,
     ),
 
     page: positiveInteger(
       1,
-      MAX_MARKET_PAGE
+      MAX_MARKET_PAGE,
     ),
 
     ids: CoinIdsSchema,
@@ -164,7 +171,7 @@ const MarketsQuerySchema = z
       message:
         "per_page must be at least the number of requested coin IDs",
       path: ["per_page"],
-    }
+    },
   );
 
 export type MarketsQuery = z.infer<typeof MarketsQuerySchema>;
@@ -174,15 +181,17 @@ export type MarketsQuery = z.infer<typeof MarketsQuerySchema>;
  *
  * Defaults:
  * - vs_currency: usd
+ * - order: market_cap_desc
  * - per_page: 100
  * - page: 1
  * - sparkline: false
  */
 export function parseMarketsQuery(
-  searchParams: URLSearchParams
+  searchParams: URLSearchParams,
 ): QueryParseResult<MarketsQuery> {
   const raw = readUniqueParameters(searchParams, [
     "vs_currency",
+    "order",
     "per_page",
     "page",
     "ids",
@@ -217,7 +226,7 @@ export function parseMarketsQuery(
 const NewsQuerySchema = z.object({
   limit: positiveInteger(
     30,
-    MAX_NEWS_LIMIT
+    MAX_NEWS_LIMIT,
   ),
 });
 
@@ -230,7 +239,7 @@ export type NewsQuery = z.infer<typeof NewsQuerySchema>;
  * Maximum limit: 50.
  */
 export function parseNewsQuery(
-  searchParams: URLSearchParams
+  searchParams: URLSearchParams,
 ): QueryParseResult<NewsQuery> {
   const raw = readUniqueParameters(searchParams, [
     "limit",
@@ -272,7 +281,7 @@ const MAX_EXTERNAL_URL_LENGTH = 2_048;
  * Returns the normalized HTTPS URL or undefined.
  */
 export function sanitizeHttpsUrl(
-  value: unknown
+  value: unknown,
 ): string | undefined {
   if (
     typeof value !== "string" ||

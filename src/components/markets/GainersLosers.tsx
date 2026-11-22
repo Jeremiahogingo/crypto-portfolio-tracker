@@ -1,44 +1,57 @@
-// src/components/markets/GainersLosers.tsx
-//
-// Derives top gainers and losers from a supplied market coin list.
-// Missing 24-hour percentage changes are excluded from rankings.
+"use client";
 
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
 import Skeleton from "@/components/ui/Skeleton";
 import CoinLogo from "@/components/ui/CoinLogo";
-import type { MarketCoin } from "@/types/market";
-import { formatPrice, formatPercent } from "@/utils/format";
+import DataSourceBadge from "@/components/ui/DataSourceBadge";
+
+import {
+  getTopGainers,
+  getTopLosers,
+} from "@/lib/market-intelligence";
+
+import type {
+  MarketCoin,
+  MarketDataSource,
+} from "@/types/market";
+
+import {
+  formatPrice,
+  formatPercent,
+} from "@/utils/format";
 
 interface GainersLosersProps {
   coins: MarketCoin[];
+  source?: MarketDataSource;
+  fetchedAt?: string;
   isLoading: boolean;
+  isFetching: boolean;
+  error: unknown;
+  onRetry: () => void;
 }
-
-const MAX_RANK = 100;
-const MIN_MARKET_CAP = 10_000_000;
-const TOP_N = 4;
-
-type CoinWithChange = MarketCoin & {
-  change24h: number;
-};
 
 function CoinRow({
   coin,
   direction,
 }: {
-  coin: CoinWithChange;
+  coin: MarketCoin & { change24h: number };
   direction: "gainer" | "loser";
 }) {
   return (
-    <div className="flex items-center justify-between border-b border-white/5 py-3 last:border-0">
+    <div className="flex items-center justify-between border-b border-border py-3 last:border-0">
       <div className="flex min-w-0 items-center gap-2">
-        <CoinLogo src={coin.logoUrl} alt={coin.name} size="sm" />
+        <CoinLogo
+          src={coin.logoUrl}
+          alt={coin.name}
+          size="sm"
+        />
 
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-text">
             {coin.symbol}
           </p>
+
           <p className="truncate text-xs text-secondary">
             {coin.name}
           </p>
@@ -47,10 +60,18 @@ function CoinRow({
 
       <div className="ml-2 flex-shrink-0 text-right">
         <p className="text-sm font-medium text-text">
-          {coin.price === null ? "—" : formatPrice(coin.price)}
+          {coin.price === null
+            ? "Price unavailable"
+            : formatPrice(coin.price)}
         </p>
 
-        <Badge variant={direction === "gainer" ? "success" : "danger"}>
+        <Badge
+          variant={
+            direction === "gainer"
+              ? "success"
+              : "danger"
+          }
+        >
           {formatPercent(coin.change24h)}
         </Badge>
       </div>
@@ -58,82 +79,155 @@ function CoinRow({
   );
 }
 
+function RankingCard({
+  title,
+  coins,
+  direction,
+}: {
+  title: string;
+  coins: (MarketCoin & { change24h: number })[];
+  direction: "gainer" | "loser";
+}) {
+  const emptyMessage =
+    direction === "gainer"
+      ? "No qualifying positive 24-hour movements are available."
+      : "No qualifying negative 24-hour movements are available.";
+
+  return (
+    <Card>
+      <h3 className="mb-2 text-sm font-semibold text-text">
+        {title}
+      </h3>
+
+      {coins.length === 0 ? (
+        <p className="py-4 text-sm text-secondary">
+          {emptyMessage}
+        </p>
+      ) : (
+        coins.map((coin) => (
+          <CoinRow
+            key={coin.id}
+            coin={coin}
+            direction={direction}
+          />
+        ))
+      )}
+    </Card>
+  );
+}
+
+function LoadingState() {
+  return (
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+      {[0, 1].map((index) => (
+        <Card key={index}>
+          <Skeleton className="mb-4 h-4 w-32" />
+
+          {[0, 1, 2, 3].map((row) => (
+            <Skeleton
+              key={row}
+              className="mb-2 h-12 w-full"
+            />
+          ))}
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 export default function GainersLosers({
   coins,
+  source,
+  fetchedAt,
   isLoading,
+  isFetching,
+  error,
+  onRetry,
 }: GainersLosersProps) {
-  if (isLoading) {
+  if (isLoading && coins.length === 0) {
+    return <LoadingState />;
+  }
+
+  if (error && coins.length === 0) {
     return (
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-        {[0, 1].map((index) => (
-          <Card key={index}>
-            <Skeleton className="mb-4 h-4 w-32" />
-            {[0, 1, 2, 3].map((row) => (
-              <Skeleton key={row} className="mb-2 h-12 w-full" />
-            ))}
-          </Card>
-        ))}
-      </div>
+      <Card>
+        <div className="space-y-3">
+          <h2 className="text-sm font-semibold text-text">
+            Top gainers and losers
+          </h2>
+
+          <p role="alert" className="text-sm text-warning">
+            Market movement rankings could not be loaded.
+          </p>
+
+          <button
+            type="button"
+            onClick={onRetry}
+            disabled={isFetching}
+            className="rounded-lg border border-border px-3 py-2 text-sm font-medium text-text transition-colors hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isFetching ? "Retrying..." : "Retry"}
+          </button>
+        </div>
+      </Card>
     );
   }
 
-  const eligible = coins.filter(
-    (coin): coin is CoinWithChange =>
-      coin.change24h !== null &&
-      coin.rank > 0 &&
-      coin.rank <= MAX_RANK &&
-      coin.marketCap > MIN_MARKET_CAP
-  );
-
-  const gainers = [...eligible]
-    .sort((a, b) => b.change24h - a.change24h)
-    .slice(0, TOP_N);
-
-  const losers = [...eligible]
-    .sort((a, b) => a.change24h - b.change24h)
-    .slice(0, TOP_N);
+  const gainers = getTopGainers(coins);
+  const losers = getTopLosers(coins);
 
   return (
-    <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-      <Card>
-        <h3 className="mb-2 text-sm font-semibold text-text">
-          🚀 Top Gainers
-        </h3>
+    <section
+      aria-labelledby="market-movers-heading"
+      className="space-y-3"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2
+            id="market-movers-heading"
+            className="text-sm font-semibold text-text"
+          >
+            Top gainers and losers
+          </h2>
 
-        {gainers.length === 0 ? (
-          <p className="py-4 text-sm text-secondary">
-            No valid 24-hour change data available.
+          <p className="mt-1 text-xs text-secondary">
+            Top 100 by market cap · Minimum market cap: $10M
           </p>
-        ) : (
-          gainers.map((coin) => (
-            <CoinRow
-              key={coin.id}
-              coin={coin}
-              direction="gainer"
-            />
-          ))
-        )}
-      </Card>
+        </div>
 
-      <Card>
-        <h3 className="mb-2 text-sm font-semibold text-text">
-          📉 Top Losers
-        </h3>
+        <div className="flex items-center gap-3">
+          {isFetching && (
+            <span className="text-xs text-secondary">
+              Updating...
+            </span>
+          )}
 
-        {losers.length === 0 ? (
-          <p className="py-4 text-sm text-secondary">
-            No valid 24-hour change data available.
-          </p>
-        ) : (
-          losers.map((coin) => (
-            <CoinRow
-              key={coin.id}
-              coin={coin}
-              direction="loser"
-            />
-          ))
-        )}
-      </Card>
-    </div>
+          <DataSourceBadge
+            source={source}
+            fetchedAt={fetchedAt}
+          />
+        </div>
+      </div>
+
+      {error !== null && error !== undefined && (
+        <p role="status" className="text-xs text-warning">
+          The latest refresh failed. Showing the last available response.
+        </p>
+      )}
+
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+        <RankingCard
+          title="🚀 Top Gainers"
+          coins={gainers}
+          direction="gainer"
+        />
+
+        <RankingCard
+          title="📉 Top Losers"
+          coins={losers}
+          direction="loser"
+        />
+      </div>
+    </section>
   );
 }
